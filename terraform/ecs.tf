@@ -92,10 +92,8 @@ resource "aws_ecs_service" "backend" {
     assign_public_ip = true
   }
 
-  deployment_configuration {
-    maximum_percent         = 200
-    minimum_healthy_percent = 100
-  }
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
 
   lifecycle {
     ignore_changes = [task_definition, desired_count]
