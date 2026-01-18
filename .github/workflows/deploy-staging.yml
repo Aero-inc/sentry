@@ -21,9 +21,6 @@ jobs:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
     if: github.event.inputs.deploy_infrastructure == 'true'
-    outputs:
-      backend_api_url: ${{ steps.urls.outputs.backend_api_url }}
-      frontend_url: ${{ steps.urls.outputs.frontend_url }}
     
     steps:
       - name: Checkout
@@ -52,19 +49,6 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve -var-file=environments/${{ env.ENVIRONMENT }}.tfvars
         working-directory: ./terraform
-      
-      - name: Get Deployment URLs
-        id: urls
-        run: |
-          echo "backend_api_url=$(terraform output -raw backend_api_url)" >> $GITHUB_OUTPUT
-          echo "frontend_url=$(terraform output -raw s3_frontend_url)" >> $GITHUB_OUTPUT
-        working-directory: ./terraform
-      
-      - name: Output URLs
-        run: |
-          echo "### 🌐 Deployment URLs" >> $GITHUB_STEP_SUMMARY
-          echo "**Backend API**: ${{ steps.urls.outputs.backend_api_url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Frontend**: ${{ steps.urls.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
 
   # Application deployment (always runs)
   deploy-backend:
@@ -147,12 +131,15 @@ jobs:
       - name: Get Backend API URL
         id: backend_url
         run: |
-          if [ -n "${{ needs.deploy-infrastructure.outputs.backend_api_url }}" ]; then
-            echo "api_url=${{ needs.deploy-infrastructure.outputs.backend_api_url }}" >> $GITHUB_OUTPUT
-          else
-            terraform init -backend-config=backend-${{ env.ENVIRONMENT }}.hcl
-            echo "api_url=$(terraform output -raw backend_api_url)" >> $GITHUB_OUTPUT
-          fi
+          terraform init -backend-config=backend-${{ env.ENVIRONMENT }}.hcl
+          echo "api_url=$(terraform output -raw cloudfront_backend_url)" >> $GITHUB_OUTPUT
+        working-directory: ./terraform
+      
+      - name: Get CloudFront Distribution ID
+        id: cloudfront
+        run: |
+          terraform init -backend-config=backend-${{ env.ENVIRONMENT }}.hcl
+          echo "distribution_id=$(terraform output -raw cloudfront_frontend_domain | xargs -I {} aws cloudfront list-distributions --query "DistributionList.Items[?DomainName=='{}'].Id" --output text)" >> $GITHUB_OUTPUT
         working-directory: ./terraform
       
       - name: Setup Node.js
@@ -187,6 +174,13 @@ jobs:
           aws s3 cp ./dist/index.html s3://${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-frontend/index.html \
             --cache-control "public,max-age=0,must-revalidate"
         working-directory: ./frontend
+      
+      - name: Invalidate CloudFront Cache
+        run: |
+          DISTRIBUTION_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?Id=='S3-${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-frontend']].Id" --output text)
+          aws cloudfront create-invalidation \
+            --distribution-id $DISTRIBUTION_ID \
+            --paths "/*"
 
   summary:
     name: Deployment Summary
@@ -218,8 +212,8 @@ jobs:
       - name: Get URLs
         id: urls
         run: |
-          echo "backend_api_url=$(terraform output -raw backend_api_url)" >> $GITHUB_OUTPUT
-          echo "frontend_url=$(terraform output -raw s3_frontend_url)" >> $GITHUB_OUTPUT
+          echo "backend_api_url=$(terraform output -raw cloudfront_backend_url)" >> $GITHUB_OUTPUT
+          echo "frontend_url=$(terraform output -raw cloudfront_frontend_url)" >> $GITHUB_OUTPUT
         working-directory: ./terraform
       
       - name: Generate summary
