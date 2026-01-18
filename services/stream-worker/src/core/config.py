@@ -68,3 +68,4 @@ class StreamConfig:
     frame_sample_rate: int = 5
     min_confidence: float = 0.5
     max_detections_per_frame: int = 10
+    enable_clip_recording: bool = False

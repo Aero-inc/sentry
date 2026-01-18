@@ -160,7 +160,7 @@ jobs:
           npm run build
         working-directory: ./frontend
         env:
-          VITE_API_URL: ${{ steps.backend_url.outputs.api_url }}
+          VITE_BACKEND_API_URL: ${{ steps.backend_url.outputs.api_url }}
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
