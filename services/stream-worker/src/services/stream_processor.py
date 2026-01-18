@@ -65,14 +65,14 @@ class StreamProcessor:
                 
                 # Download annotator model
                 annotator_s3_key = self.config.get_s3_model_key('annotator')
-                self.s3_service.download_model(annotator_s3_key, annotator_path)
-                print(f"Downloaded {annotator_s3_key} to {annotator_path}")
+                if not self.s3_service.download_model(annotator_s3_key, annotator_path):
+                    print(f"WARNING: Could not download {annotator_s3_key}, will run without model")
                 
                 # Download specialist models
                 cpu_specialist_path = self.config.get_local_model_path('cpu_specialist')
                 cpu_specialist_s3_key = self.config.get_s3_model_key('cpu_specialist')
-                self.s3_service.download_model(cpu_specialist_s3_key, cpu_specialist_path)
-                print(f"Downloaded {cpu_specialist_s3_key} to {cpu_specialist_path}")
+                if not self.s3_service.download_model(cpu_specialist_s3_key, cpu_specialist_path):
+                    print(f"WARNING: Could not download {cpu_specialist_s3_key}, will run without specialist model")
             
             # Load annotation model
             if os.path.exists(annotator_path):

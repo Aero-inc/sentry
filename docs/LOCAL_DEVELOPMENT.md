@@ -3,9 +3,28 @@
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- AWS credentials with access to staging environment
+- AWS CLI configured with credentials (or manual credentials)
 
-## Setup
+## Quick Start with Script
+
+The fastest way to start local development:
+
+```bash
+# Make sure you have AWS CLI configured first
+aws configure
+
+# Start everything with one command
+source scripts/start-local.sh
+```
+
+This script will:
+- ✅ Automatically load AWS credentials from your AWS CLI config
+- ✅ Build and start all services with docker-compose
+- ✅ Handle paths correctly even if run from any directory
+
+## Manual Setup (Alternative)
+
+If you prefer to run commands manually:
 
 1. **Export AWS credentials:**
    ```bash
@@ -31,6 +50,11 @@
 ## Common Commands
 
 ```bash
+# Start with convenience script (recommended)
+source scripts/start-local.sh
+
+# Or use docker-compose directly:
+
 # Start in background
 docker-compose -f docker-compose.local.yml up -d
 
@@ -54,9 +78,15 @@ docker rm sentry-stream-worker sentry-frontend
 ```bash
 docker ps -a | grep sentry
 docker stop <container-name>
-docker rm <container-name>
+doIf using the start script, make sure AWS CLI is configured
+aws configure list
+
+# If setting manually, verify credentials are exported
+echo $AWS_ACCESS_KEY_ID
 ```
 
+**"Failed to download model" errors?**
+This is normal for local development - ML models aren't uploaded to S3 yet. The service will start and function without them (useful for testing the API).
 **AWS credentials not working?**
 ```bash
 # Verify credentials are exported
