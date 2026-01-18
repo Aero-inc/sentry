@@ -1,6 +1,6 @@
 # Application Load Balancer for backend API
 resource "aws_lb" "backend" {
-  name               = "${var.project_name}-${var.environment}-backend-alb"
+  name               = "${var.project_name}-${var.environment}-be-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -56,7 +56,7 @@ resource "aws_security_group" "alb" {
 
 # Target group for backend service
 resource "aws_lb_target_group" "backend" {
-  name        = "${var.project_name}-${var.environment}-backend-tg"
+  name        = "${var.project_name}-${var.environment}-be-tg"
   port        = 8080
   protocol    = "HTTP"
   vpc_id      = module.vpc.vpc_id
