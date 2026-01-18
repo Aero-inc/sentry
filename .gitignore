@@ -211,3 +211,59 @@ data/
 
 # Predictions
 runs/detect/predict/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# AWS
+*.pem
+
+# ML Models
+*.onnx
+*.pt
+*.pth
+*.h5
+*.pb
+models/
+*.weights
+*.caffemodel
+
+# Docker
+docker-compose.override.yml
+
+# IDE
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local development
+.env.local
+secrets.json
+local-*.json
