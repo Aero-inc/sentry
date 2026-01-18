@@ -1,7 +1,7 @@
 # Staging Environment Configuration
 environment         = "staging"
 aws_region         = "us-east-1"
-project_name       = "sentry"
+project_name       = "aero-sentry-2026"  # Make this globally unique
 
 # ECS Configuration
 ecs_task_cpu       = 256
