@@ -18,6 +18,6 @@ cloudwatch_retention_days = 7
 # Tags
 tags = {
   Environment = "staging"
-  Project     = "sentry"
+  Project     = "aero-sentry-2026"
   ManagedBy   = "terraform"
 }

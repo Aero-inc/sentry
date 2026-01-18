@@ -1,7 +1,7 @@
 # Production Environment Configuration
 environment         = "production"
 aws_region         = "us-east-1"
-project_name       = "sentry"
+project_name       = "aero-sentry-2026"
 
 # ECS Configuration
 ecs_task_cpu       = 512
@@ -18,6 +18,6 @@ cloudwatch_retention_days = 30
 # Tags
 tags = {
   Environment = "production"
-  Project     = "sentry"
+  Project     = "aero-sentry-2026"
   ManagedBy   = "terraform"
 }
