@@ -84,9 +84,9 @@ resource "aws_s3_bucket_policy" "frontend" {
   depends_on = [aws_s3_bucket_public_access_block.frontend]
 }
 
-# Block public access for artifacts and clips buckets
+# Block public access for artifacts bucket
 resource "aws_s3_bucket_public_access_block" "private" {
-  for_each = toset(["artifacts", "clips"])
+  for_each = toset(["artifacts"])
   bucket   = aws_s3_bucket.buckets[each.key].id
 
   block_public_acls       = true

@@ -90,9 +90,7 @@ resource "aws_iam_role_policy" "backend_task_permissions" {
         ]
         Resource = [
           "${aws_s3_bucket.buckets["artifacts"].arn}/*",
-          "${aws_s3_bucket.buckets["clips"].arn}/*",
-          "${aws_s3_bucket.buckets["artifacts"].arn}",
-          "${aws_s3_bucket.buckets["clips"].arn}"
+          "${aws_s3_bucket.buckets["artifacts"].arn}"
         ]
       },
       {
