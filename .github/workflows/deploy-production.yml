@@ -1,9 +1,7 @@
 name: Deploy to Production
 
+# Workflow paused - production environment not in use
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       deploy_infrastructure:
@@ -11,6 +9,9 @@ on:
         required: false
         type: boolean
         default: false
+  # push:
+  #   branches:
+  #     - main
 
 env:
   AWS_REGION: us-east-1
