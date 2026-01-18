@@ -20,8 +20,8 @@ def create_app() -> Flask:
     print(f"Environment: {config.environment}")
     
     # Initialize AWS services
-    s3_service = S3Service(config.s3_artifacts_bucket)
-    cloudwatch_service = CloudWatchService(config.environment)
+    s3_service = S3Service(config.s3_artifacts_bucket, config.aws_region)
+    cloudwatch_service = CloudWatchService(config.environment, config.aws_region)
     
     # Initialize stream processor
     processor = StreamProcessor(config, s3_service, cloudwatch_service)
