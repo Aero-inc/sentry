@@ -55,3 +55,23 @@ output "backend_alb_dns" {
   value       = aws_lb.backend.dns_name
 }
 
+output "cloudfront_frontend_url" {
+  description = "CloudFront distribution URL for frontend (HTTPS)"
+  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+}
+
+output "cloudfront_backend_url" {
+  description = "CloudFront distribution URL for backend API (HTTPS)"
+  value       = "https://${aws_cloudfront_distribution.backend.domain_name}"
+}
+
+output "cloudfront_frontend_domain" {
+  description = "CloudFront distribution domain name for frontend"
+  value       = aws_cloudfront_distribution.frontend.domain_name
+}
+
+output "cloudfront_backend_domain" {
+  description = "CloudFront distribution domain name for backend"
+  value       = aws_cloudfront_distribution.backend.domain_name
+}
+

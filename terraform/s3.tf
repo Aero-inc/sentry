@@ -58,13 +58,13 @@ resource "aws_s3_bucket_website_configuration" "frontend" {
 resource "aws_s3_bucket_public_access_block" "frontend" {
   bucket = aws_s3_bucket.buckets["frontend"].id
 
-  block_public_acls       = false
+  block_public_acls       = true
   block_public_policy     = false
-  ignore_public_acls      = false
+  ignore_public_acls      = true
   restrict_public_buckets = false
 }
 
-# Bucket policy for frontend bucket (public read)
+# Bucket policy for frontend bucket (CloudFront access)
 resource "aws_s3_bucket_policy" "frontend" {
   bucket = aws_s3_bucket.buckets["frontend"].id
 
@@ -72,11 +72,18 @@ resource "aws_s3_bucket_policy" "frontend" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "PublicReadGetObject"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.buckets["frontend"].arn}/*"
+        Sid    = "AllowCloudFrontServicePrincipal"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudfront.amazonaws.com"
+        }
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.buckets["frontend"].arn}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = aws_cloudfront_distribution.frontend.arn
+          }
+        }
       },
     ]
   })
