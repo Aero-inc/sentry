@@ -45,3 +45,13 @@ output "ecs_security_group_id" {
   value       = module.vpc.ecs_security_group_id
 }
 
+output "backend_api_url" {
+  description = "Backend API URL (Load Balancer DNS)"
+  value       = "http://${aws_lb.backend.dns_name}"
+}
+
+output "backend_alb_dns" {
+  description = "Backend ALB DNS name"
+  value       = aws_lb.backend.dns_name
+}
+
