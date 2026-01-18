@@ -84,24 +84,24 @@ jobs:
           file: ./services/stream-worker/Dockerfile
           push: true
           tags: |
-            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/sentry-${{ env.ENVIRONMENT }}-backend:${{ github.sha }}
-            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/sentry-${{ env.ENVIRONMENT }}-backend:latest
+            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/aero-sentry-2026-${{ env.ENVIRONMENT }}-backend:${{ github.sha }}
+            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/aero-sentry-2026-${{ env.ENVIRONMENT }}-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
       - name: Deploy to ECS
         run: |
           aws ecs update-service \
-            --cluster sentry-${{ env.ENVIRONMENT }}-cluster \
-            --service sentry-${{ env.ENVIRONMENT }}-backend \
+            --cluster aero-sentry-2026-${{ env.ENVIRONMENT }}-cluster \
+            --service aero-sentry-2026-${{ env.ENVIRONMENT }}-backend \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
       
       - name: Wait for deployment
         run: |
           aws ecs wait services-stable \
-            --cluster sentry-${{ env.ENVIRONMENT }}-cluster \
-            --services sentry-${{ env.ENVIRONMENT }}-backend \
+            --cluster aero-sentry-2026-${{ env.ENVIRONMENT }}-cluster \
+            --services aero-sentry-2026-${{ env.ENVIRONMENT }}-backend \
             --region ${{ env.AWS_REGION }}
 
   deploy-frontend:
@@ -138,12 +138,12 @@ jobs:
       
       - name: Deploy to S3
         run: |
-          aws s3 sync ./dist s3://sentry-${{ env.ENVIRONMENT }}-frontend/ \
+          aws s3 sync ./dist s3://aero-sentry-2026-${{ env.ENVIRONMENT }}-frontend/ \
             --delete \
             --cache-control "public,max-age=31536000,immutable" \
             --exclude "index.html"
           
-          aws s3 cp ./dist/index.html s3://sentry-${{ env.ENVIRONMENT }}-frontend/index.html \
+          aws s3 cp ./dist/index.html s3://aero-sentry-2026-${{ env.ENVIRONMENT }}-frontend/index.html \
             --cache-control "public,max-age=0,must-revalidate"
         working-directory: ./frontend
 
