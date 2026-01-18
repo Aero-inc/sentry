@@ -1,5 +1,5 @@
 locals {
-  bucket_types = ["frontend", "artifacts", "clips"]
+  bucket_types = ["frontend", "artifacts"]
   buckets = {
     for type in local.bucket_types : type => {
       name = "${var.project_name}-${var.environment}-${type}"
