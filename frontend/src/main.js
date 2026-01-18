@@ -121,8 +121,10 @@ async function startStreaming() {
  */
 async function stopStreaming() {
     try {
+        // Stop immediately to prevent any new frames from being sent
         isStreaming = false;
 
+        // Clear interval FIRST before any async operations
         if (processingInterval) {
             clearInterval(processingInterval);
             processingInterval = null;
@@ -133,16 +135,19 @@ async function stopStreaming() {
             videoStream = null;
         }
 
-        if (streamId) {
-            await fetch(`${API_URL}/streams/${streamId}`, {
+        // Store streamId before clearing it
+        const streamToStop = streamId;
+        streamId = null; // Clear immediately to prevent race conditions
+
+        if (streamToStop) {
+            await fetch(`${API_URL}/streams/${streamToStop}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' }
             });
 
-            log(`Stream stopped: ${streamId}`);
+            log(`Stream stopped: ${streamToStop}`);
         }
 
-        streamId = null;
         startBtn.disabled = false;
         stopBtn.disabled = true;
         updateStatus('idle', 'Idle');
@@ -161,11 +166,17 @@ async function stopStreaming() {
  * Process video frames and send to backend
  */
 function processFrames() {
+    // Clear any existing interval to prevent duplicates
+    if (processingInterval) {
+        clearInterval(processingInterval);
+        processingInterval = null;
+    }
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
 
     processingInterval = setInterval(async () => {
-        if (!isStreaming || !video.videoWidth) return;
+        if (!isStreaming || !video.videoWidth || !streamId) return;
 
         // Capture frame
         canvas.width = video.videoWidth;
@@ -177,9 +188,10 @@ function processFrames() {
 
         // Send to backend
         const startTime = Date.now();
+        const currentStreamId = streamId; // Capture current streamId to avoid race conditions
 
         try {
-            const response = await fetch(`${API_URL}/streams/${streamId}/frames`, {
+            const response = await fetch(`${API_URL}/streams/${currentStreamId}/frames`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -188,7 +200,10 @@ function processFrames() {
                 })
             });
 
-            if (!response.ok) throw new Error('Frame processing failed');
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Frame processing failed');
+            }
 
             const result = await response.json();
             const latency = Date.now() - startTime;
@@ -213,6 +228,12 @@ function processFrames() {
         } catch (error) {
             console.error('Frame processing error:', error);
             log(`Frame error: ${error.message}`, 'error');
+            
+            // Stop processing if stream is inactive
+            if (error.message.includes('Stream not active')) {
+                log('Stream became inactive, stopping...', 'error');
+                stopStreaming();
+            }
         }
 
     }, 1000 / 10);  // Process at ~10 FPS (server-side sampling will reduce actual processing)
