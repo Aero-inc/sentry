@@ -23,7 +23,7 @@ jobs:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_infrastructure == true ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_infrastructure == 'true' ||
       github.event_name == 'push' && contains(github.event.head_commit.modified, 'terraform/')
     environment:
       name: production
@@ -134,7 +134,7 @@ jobs:
       
       - name: Install and build
         run: |
-          npm ci
+          npm install
           npm run build
         working-directory: ./frontend
         env:
