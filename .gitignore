@@ -217,6 +217,7 @@ runs/detect/predict/
 *.tfstate.*
 *.tfvars
 !terraform.tfvars.example
+!terraform/environments/*.tfvars
 .terraform/
 .terraform.lock.hcl
 crash.log
