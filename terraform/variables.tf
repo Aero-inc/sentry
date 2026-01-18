@@ -12,7 +12,7 @@ variable "aws_region" {
 variable "project_name" {
   description = "Project name"
   type        = string
-  default     = "sentry"
+  default     = "aero-sentry-2026"
 }
 
 variable "vpc_cidr" {
