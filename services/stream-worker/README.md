@@ -40,10 +40,10 @@ stream-worker/
 ## Configuration
 
 Environment variables (see [src/core/config.py](src/core/config.py)):
-- `ENVIRONMENT`: dev/prod
-- `MODEL_PATH`: Path to ONNX model
-- `S3_ARTIFACTS_BUCKET`: Model storage bucket
-- `S3_CLIPS_BUCKET`: Frame/clip storage bucket
+- `ENVIRONMENT`: Environment (staging/production)
+- `MODEL_PATH`: Path to ONNX model (default: `/models/annotator.onnx`)
+- `S3_ARTIFACTS_BUCKET`: Model storage bucket (e.g., `aero-sentry-2026-staging-artifacts`)
+- `S3_CLIPS_BUCKET`: Frame/clip storage bucket (e.g., `aero-sentry-2026-staging-clips`)
 
 ## API Endpoints
 

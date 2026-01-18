@@ -3,6 +3,7 @@ Stream Worker - Main Application Entry Point
 Provides REST API for video stream processing with ML inference
 """
 from flask import Flask
+from flask_cors import CORS
 
 from src.core.config import Config
 from src.services.aws_services import S3Service, CloudWatchService
@@ -19,7 +20,7 @@ def create_app() -> Flask:
     print(f"Environment: {config.environment}")
     
     # Initialize AWS services
-    s3_service = S3Service(config.s3_artifacts_bucket, config.s3_clips_bucket)
+    s3_service = S3Service(config.s3_artifacts_bucket)
     cloudwatch_service = CloudWatchService(config.environment)
     
     # Initialize stream processor
@@ -27,6 +28,9 @@ def create_app() -> Flask:
     
     # Create Flask app
     app = Flask(__name__)
+    
+    # Enable CORS for all origins (can be restricted to specific origins in production)
+    CORS(app, resources={r"/*": {"origins": "*"}})
     
     # Register routes
     init_routes(processor)

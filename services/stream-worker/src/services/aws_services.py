@@ -11,10 +11,9 @@ import cv2
 class S3Service:
     """Handle S3 operations"""
     
-    def __init__(self, artifacts_bucket: Optional[str], clips_bucket: Optional[str]):
+    def __init__(self, artifacts_bucket: Optional[str]):
         self.artifacts_bucket = artifacts_bucket
-        self.clips_bucket = clips_bucket
-        self.client = boto3.client('s3') if (artifacts_bucket or clips_bucket) else None
+        self.client = boto3.client('s3') if artifacts_bucket else None
     
     def download_model(self, s3_key: str, local_path: str) -> bool:
         """Download model from S3"""

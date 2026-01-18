@@ -230,13 +230,12 @@ override.tf.json
 # AWS
 *.pem
 
-# ML Models
+# ML Models (binary files only, not Python source code)
 *.onnx
 *.pt
 *.pth
 *.h5
 *.pb
-models/
 *.weights
 *.caffemodel
 

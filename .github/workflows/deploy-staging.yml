@@ -21,6 +21,9 @@ jobs:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
     if: github.event.inputs.deploy_infrastructure == 'true'
+    outputs:
+      backend_api_url: ${{ steps.urls.outputs.backend_api_url }}
+      frontend_url: ${{ steps.urls.outputs.frontend_url }}
     
     steps:
       - name: Checkout
@@ -49,6 +52,19 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve -var-file=environments/${{ env.ENVIRONMENT }}.tfvars
         working-directory: ./terraform
+      
+      - name: Get Deployment URLs
+        id: urls
+        run: |
+          echo "backend_api_url=$(terraform output -raw backend_api_url)" >> $GITHUB_OUTPUT
+          echo "frontend_url=$(terraform output -raw s3_frontend_url)" >> $GITHUB_OUTPUT
+        working-directory: ./terraform
+      
+      - name: Output URLs
+        run: |
+          echo "### 🌐 Deployment URLs" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend API**: ${{ steps.urls.outputs.backend_api_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend**: ${{ steps.urls.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
 
   # Application deployment (always runs)
   deploy-backend:
@@ -115,6 +131,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      
+      - name: Get Backend API URL
+        id: backend_url
+        run: |
+          if [ -n "${{ needs.deploy-infrastructure.outputs.backend_api_url }}" ]; then
+            echo "api_url=${{ needs.deploy-infrastructure.outputs.backend_api_url }}" >> $GITHUB_OUTPUT
+          else
+            terraform init -backend-config=backend-${{ env.ENVIRONMENT }}.hcl
+            echo "api_url=$(terraform output -raw backend_api_url)" >> $GITHUB_OUTPUT
+          fi
+        working-directory: ./terraform
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -128,7 +168,7 @@ jobs:
           npm run build
         working-directory: ./frontend
         env:
-          VITE_API_URL: ${{ secrets.STAGING_API_URL }}
+          VITE_API_URL: ${{ steps.backend_url.outputs.api_url }}
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -151,10 +191,37 @@ jobs:
   summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy-backend, deploy-frontend]
+    needs: [deploy-infrastructure, deploy-backend, deploy-frontend]
     if: always()
     
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      
+      - name: Terraform Init
+        run: terraform init -backend-config=backend-${{ env.ENVIRONMENT }}.hcl
+        working-directory: ./terraform
+      
+      - name: Get URLs
+        id: urls
+        run: |
+          echo "backend_api_url=$(terraform output -raw backend_api_url)" >> $GITHUB_OUTPUT
+          echo "frontend_url=$(terraform output -raw s3_frontend_url)" >> $GITHUB_OUTPUT
+        working-directory: ./terraform
+      
       - name: Generate summary
         run: |
           echo "## 🚀 Staging Deployment" >> $GITHUB_STEP_SUMMARY
@@ -166,3 +233,7 @@ jobs:
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Backend | ${{ needs.deploy-backend.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend | ${{ needs.deploy-frontend.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Live URLs" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend API**: ${{ steps.urls.outputs.backend_api_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend**: ${{ steps.urls.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
