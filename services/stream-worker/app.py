@@ -37,7 +37,11 @@ def create_app() -> Flask:
     return app
 
 
+# Create app instance (used by both gunicorn and direct execution)
+app = create_app()
+
+
 if __name__ == '__main__':
-    app = create_app()
+    # Reuse the already-created app instance
     port = Config.from_env().port
     app.run(host='0.0.0.0', port=port, debug=False)
