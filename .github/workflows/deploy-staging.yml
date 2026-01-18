@@ -12,6 +12,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ENVIRONMENT: staging
+  PROJECT_NAME: aero-sentry-2026
   TERRAFORM_VERSION: 1.5.0
 
 jobs:
@@ -84,24 +85,24 @@ jobs:
           file: ./services/stream-worker/Dockerfile
           push: true
           tags: |
-            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/aero-sentry-2026-${{ env.ENVIRONMENT }}-backend:${{ github.sha }}
-            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/aero-sentry-2026-${{ env.ENVIRONMENT }}-backend:latest
+            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend:${{ github.sha }}
+            ${{ steps.account.outputs.id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
       - name: Deploy to ECS
         run: |
           aws ecs update-service \
-            --cluster aero-sentry-2026-${{ env.ENVIRONMENT }}-cluster \
-            --service aero-sentry-2026-${{ env.ENVIRONMENT }}-backend \
+            --cluster ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-cluster \
+            --service ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
       
       - name: Wait for deployment
         run: |
           aws ecs wait services-stable \
-            --cluster aero-sentry-2026-${{ env.ENVIRONMENT }}-cluster \
-            --services aero-sentry-2026-${{ env.ENVIRONMENT }}-backend \
+            --cluster ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-cluster \
+            --services ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend \
             --region ${{ env.AWS_REGION }}
 
   deploy-frontend:
@@ -138,12 +139,12 @@ jobs:
       
       - name: Deploy to S3
         run: |
-          aws s3 sync ./dist s3://aero-sentry-2026-${{ env.ENVIRONMENT }}-frontend/ \
+          aws s3 sync ./dist s3://${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-frontend/ \
             --delete \
             --cache-control "public,max-age=31536000,immutable" \
             --exclude "index.html"
           
-          aws s3 cp ./dist/index.html s3://aero-sentry-2026-${{ env.ENVIRONMENT }}-frontend/index.html \
+          aws s3 cp ./dist/index.html s3://${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-frontend/index.html \
             --cache-control "public,max-age=0,must-revalidate"
         working-directory: ./frontend
 
