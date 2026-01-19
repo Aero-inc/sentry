@@ -4,18 +4,19 @@ Handles frame processing pipeline
 """
 import os
 import time
-from typing import Dict, Any, List
 from dataclasses import asdict
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from src.core.config import Config, StreamConfig
+from src.core.config import Config, StreamConfig, MODEL_WEIGHTS_DIR
 from src.core.errors import StreamNotFoundError, InvalidFrameError
-from src.services.aws_services import S3Service, CloudWatchService
-from src.models.specialist_interface import SpecialistInterface, DetectionResult
-from src.models.cpu_specialist import CPUSpecialist
 from src.models.annotation_model import AnnotationModel, Annotation
+from src.models.cpu_specialist import CPUSpecialist
+from src.models.specialist_interface import SpecialistInterface, DetectionResult
+from src.services.aws_services import S3Service, CloudWatchService
 from src.services.decision_maker import DecisionMaker, SpecialistDecision
+
 
 class StreamProcessor:
     """
@@ -23,14 +24,19 @@ class StreamProcessor:
     Pipeline: Annotation → Decision Maker → Specialist Models → Actions
     """
     
+    # Frame validation constants
+    MIN_FRAME_DIM = 100
+    MAX_FRAME_DIM = 4096
+    EXPECTED_CHANNELS = 3
+    
     def __init__(self, cfg: Config, s3: S3Service, cloudwatch: CloudWatchService):
         self.config = cfg
         self.s3_service = s3
         self.cloudwatch_service = cloudwatch
         
         # Pipeline components
-        self.annotation_model: AnnotationModel = None
-        self.decision_maker: DecisionMaker = None
+        self.annotation_model: Optional[AnnotationModel] = None
+        self.decision_maker: Optional[DecisionMaker] = None
         self.specialists: Dict[str, SpecialistInterface] = {}
         
         self.active_streams: Dict[str, StreamConfig] = {}
@@ -61,7 +67,7 @@ class StreamProcessor:
             # Download models from S3 on startup
             if self.config.s3_artifacts_bucket:
                 print(f"Downloading models from S3: {self.config.s3_artifacts_bucket}")
-                os.makedirs('/models', exist_ok=True)
+                os.makedirs(MODEL_WEIGHTS_DIR, exist_ok=True)
                 
                 # Download annotator model
                 annotator_s3_key = self.config.get_s3_model_key('annotator')
@@ -252,17 +258,25 @@ class StreamProcessor:
             'metrics': combined_metrics
         }
     
-    @staticmethod
-    def _validate_frame(frame: np.ndarray) -> bool:
-        """Validate frame quality and format"""
+    @classmethod
+    def _validate_frame(cls, frame: np.ndarray):
+        """Validate frame quality and format
+        
+        Args:
+            frame: RGB image as numpy array
+            
+        Returns:
+            True if frame is valid, False otherwise
+        """
         if frame is None or frame.size == 0:
             return False
         
-        if len(frame.shape) != 3 or frame.shape[2] != 3:
+        if len(frame.shape) != 3 or frame.shape[2] != cls.EXPECTED_CHANNELS:
             return False
         
         height, width = frame.shape[:2]
-        if not (100 <= height <= 4096 and 100 <= width <= 4096):
+        if not (cls.MIN_FRAME_DIM <= height <= cls.MAX_FRAME_DIM and 
+                cls.MIN_FRAME_DIM <= width <= cls.MAX_FRAME_DIM):
             return False
         
         return True

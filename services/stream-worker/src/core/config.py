@@ -13,6 +13,9 @@ MODEL_NAMES = {
     'gpu_specialist': 'gpu_specialist.onnx',
 }
 
+# Local model storage directory
+MODEL_WEIGHTS_DIR = '/app/src/models/weights'
+
 # S3 model paths (prefix + model name)
 S3_MODEL_PREFIX = 'models/'
 
@@ -55,7 +58,7 @@ class Config:
         return f"{S3_MODEL_PREFIX}{model_name}"
     
     @staticmethod
-    def get_local_model_path(model_type: str, base_dir: str = '/models') -> str:
+    def get_local_model_path(model_type: str, base_dir: str = MODEL_WEIGHTS_DIR) -> str:
         """Get local file path for a model type"""
         model_name = MODEL_NAMES.get(model_type, MODEL_NAMES['annotator'])
         return f"{base_dir}/{model_name}"

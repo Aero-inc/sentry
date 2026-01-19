@@ -1,31 +1,36 @@
 """
 API routes for stream worker
 """
-from flask import Blueprint, request, jsonify
-from typing import Dict, Any
-import numpy as np
-import cv2
+from typing import Any, Dict, Optional, Tuple
 import base64
 
-from src.core.errors import StreamNotFoundError, InvalidFrameError, InferenceError
-from src.services.stream_processor import StreamProcessor
+import cv2
+import numpy as np
+from flask import Blueprint, jsonify, request
+
 from src.core.config import StreamConfig
+from src.core.errors import InvalidFrameError, InferenceError, StreamNotFoundError
+from src.services.stream_processor import StreamProcessor
 
 
 api_bp = Blueprint('api', __name__)
 
-# This will be injected by the app factory
-stream_processor: StreamProcessor = None
+# Global processor instance (injected by app factory)
+stream_processor: Optional[StreamProcessor] = None
 
 
 def init_routes(processor: StreamProcessor):
-    """Initialize routes with stream processor"""
+    """Initialize routes with stream processor
+    
+    Args:
+        processor: StreamProcessor instance to handle requests
+    """
     global stream_processor
     stream_processor = processor
 
 
 @api_bp.route('/health', methods=['GET'])
-def health_check() -> Dict[str, Any]:
+def health_check():
     """Health check endpoint"""
     stats = stream_processor.get_stats() if stream_processor else {}
     
@@ -39,7 +44,7 @@ def health_check() -> Dict[str, Any]:
 
 
 @api_bp.route('/streams', methods=['POST'])
-def create_stream() -> Dict[str, Any]:
+def create_stream():
     """Start a new stream"""
     try:
         data = request.get_json()
@@ -67,7 +72,7 @@ def create_stream() -> Dict[str, Any]:
 
 
 @api_bp.route('/streams/<stream_id>', methods=['DELETE'])
-def delete_stream(stream_id: str) -> Dict[str, Any]:
+def delete_stream(stream_id: str):
     """Stop a stream"""
     try:
         result = stream_processor.stop_stream(stream_id)
@@ -80,7 +85,7 @@ def delete_stream(stream_id: str) -> Dict[str, Any]:
 
 
 @api_bp.route('/streams/<stream_id>/frames', methods=['POST'])
-def process_frame(stream_id: str) -> Dict[str, Any]:
+def process_frame(stream_id: str):
     """Process a frame from a stream"""
     try:
         data = request.get_json()
@@ -115,7 +120,7 @@ def process_frame(stream_id: str) -> Dict[str, Any]:
 
 
 @api_bp.route('/stats', methods=['GET'])
-def get_stats() -> Dict[str, Any]:
+def get_stats():
     """Get processing statistics"""
     try:
         stats = stream_processor.get_stats()

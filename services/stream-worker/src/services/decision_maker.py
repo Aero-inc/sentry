@@ -2,8 +2,8 @@
 Decision Maker
 Analyzes annotations and decides which specialist models to invoke
 """
-from typing import List, Dict, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List
 
 from src.models.annotation_model import Annotation
 
@@ -22,18 +22,33 @@ class DecisionMaker:
     Analyzes annotations and routes to appropriate specialist models
     """
     
+    DEFAULT_HIGH_PRIORITY_OBJECTS = ['person', 'vehicle', 'object_0', 'object_1']
+    DEFAULT_CONFIDENCE_THRESHOLD = 0.7
+    DEFAULT_MIN_ANNOTATIONS = 1
+    
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.decision_rules = self._load_decision_rules()
     
-    def _load_decision_rules(self) -> Dict[str, Any]:
-        """Load decision rules from configuration"""
+    def _load_decision_rules(self):
+        """Load decision rules from configuration
+        
+        Returns:
+            Dictionary of decision rules
+        """
         return {
-            'high_priority_objects': self.config.get('high_priority_objects', [
-                'person', 'vehicle', 'object_0', 'object_1'
-            ]),
-            'confidence_threshold_specialist': self.config.get('confidence_threshold_specialist', 0.7),
-            'min_annotations_for_specialist': self.config.get('min_annotations_for_specialist', 1),
+            'high_priority_objects': self.config.get(
+                'high_priority_objects', 
+                self.DEFAULT_HIGH_PRIORITY_OBJECTS
+            ),
+            'confidence_threshold_specialist': self.config.get(
+                'confidence_threshold_specialist', 
+                self.DEFAULT_CONFIDENCE_THRESHOLD
+            ),
+            'min_annotations_for_specialist': self.config.get(
+                'min_annotations_for_specialist', 
+                self.DEFAULT_MIN_ANNOTATIONS
+            ),
         }
     
     def decide(self, annotations: List[Annotation]) -> List[SpecialistDecision]:
