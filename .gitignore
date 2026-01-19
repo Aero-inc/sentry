@@ -211,6 +211,7 @@ data/
 
 # Predictions
 runs/detect/predict/
+ml/runs/
 
 # Terraform
 *.tfstate
