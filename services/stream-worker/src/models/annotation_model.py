@@ -2,10 +2,21 @@
 Annotation Model
 Performs initial object detection to identify regions of interest
 """
-import time
-import numpy as np
-from typing import Dict, Any, List, Optional
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+import time
+
+import cv2
+import numpy as np
+import torch
+
+try:
+    import onnxruntime as ort
+    HAS_ONNXRUNTIME = True
+except ImportError:
+    HAS_ONNXRUNTIME = False
 
 
 @dataclass
@@ -23,45 +34,72 @@ class AnnotationModel:
     Identifies regions and objects for downstream specialist processing
     """
     
+    DEFAULT_INPUT_SIZE = (640, 640)
+    DEFAULT_CONFIDENCE_THRESHOLD = 0.3
+    MIN_DETECTION_SIZE = 6  # Minimum number of values in detection array
+    
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.model: Optional[Any] = None
+        self.model: Optional[torch.nn.Module] = None
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.is_loaded = False
         self.annotation_times: List[float] = []
+        self._input_size = config.get('annotation_input_size', self.DEFAULT_INPUT_SIZE)
+        self._confidence_threshold = config.get('annotation_confidence_threshold', self.DEFAULT_CONFIDENCE_THRESHOLD)
         
-    def load_model(self) -> None:
-        """Load annotation model"""
-        print("Loading annotation model")
-        
-        model_path = self.config.get('annotation_model_path')
-        if not model_path:
-            raise ValueError("annotation_model_path is required in config")
+    def load_model(self):
+        """Load annotation model using PyTorch or ONNX Runtime"""
+        model_path = Path(self.config.get('annotation_model_path', ''))
+        if not model_path or not model_path.exists():
+            raise ValueError(f"Invalid model path: {model_path}")
         
         try:
-            import onnxruntime as ort
+            print(f"Loading annotation model from {model_path} on {self.device}")
             
-            session_options = ort.SessionOptions()
-            session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            
-            self.model = ort.InferenceSession(
-                model_path,
-                sess_options=session_options,
-                providers=['CPUExecutionProvider']
-            )
+            # Load based on file extension
+            if model_path.suffix == '.onnx':
+                self._load_onnx_model(model_path)
+            else:
+                # PyTorch format (.pt, .pth)
+                self.model = torch.load(str(model_path), map_location=self.device)
+                self.model.eval()
             
             self.is_loaded = True
-            print("Annotation model loaded successfully")
+            print(f"Annotation model loaded successfully on {self.device}")
         except Exception as e:
-            print(f"ERROR: Failed to load annotation model: {e}")
-            raise
+            raise RuntimeError(f"Failed to load annotation model: {e}") from e
     
-    def unload_model(self) -> None:
+    def _load_onnx_model(self, model_path: Path):
+        """Load ONNX model using ONNX Runtime"""
+        if not HAS_ONNXRUNTIME:
+            raise RuntimeError("onnxruntime is not installed. Install it to load ONNX models.")
+        
+        session_options = ort.SessionOptions()
+        session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        
+        # Choose provider based on device
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.device.type == 'cuda' else ['CPUExecutionProvider']
+        
+        self.model = ort.InferenceSession(
+            str(model_path),
+            sess_options=session_options,
+            providers=providers
+        )
+    
+    def unload_model(self):
         """Unload annotation model from memory"""
-        self.model = None
+        if self.model is not None:
+            del self.model
+            self.model = None
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
         self.is_loaded = False
         self.annotation_times.clear()
         print("Annotation model unloaded")
     
+    @torch.no_grad()
     def annotate(self, frame: np.ndarray) -> List[Annotation]:
         """
         Annotate frame to identify regions and objects
@@ -78,15 +116,15 @@ class AnnotationModel:
         start_time = time.perf_counter()
         
         try:
-            # Preprocess frame
-            processed = self._preprocess(frame)
+            # Preprocess frame to tensor
+            input_tensor = self._preprocess(frame)
             
-            # Run inference
-            input_name = self.model.get_inputs()[0].name
-            outputs = self.model.run(None, {input_name: processed})
+            # Run inference with automatic mixed precision if on GPU
+            with self._inference_context():
+                outputs = self._run_inference(input_tensor)
             
             # Parse annotations
-            annotations = self._parse_annotations(outputs[0])
+            annotations = self._parse_annotations(outputs)
             
             # Track time
             annotation_time_ms = (time.perf_counter() - start_time) * 1000
@@ -95,36 +133,60 @@ class AnnotationModel:
             return annotations
             
         except Exception as e:
-            print(f"ERROR: Annotation failed: {e}")
-            raise
+            raise RuntimeError(f"Annotation failed: {e}") from e
     
-    def _preprocess(self, frame: np.ndarray) -> np.ndarray:
-        """Preprocess frame for annotation model"""
-        import cv2
-        
-        input_size = self.config.get('annotation_input_size', (640, 640))
-        
-        # Resize
-        resized = cv2.resize(frame, input_size)
-        
-        # Normalize to [0, 1]
-        normalized = resized.astype(np.float32) / 255.0
-        
-        # Transpose to NCHW format and add batch dimension
-        preprocessed = np.transpose(normalized, (2, 0, 1))
-        preprocessed = np.expand_dims(preprocessed, axis=0)
-        
-        return preprocessed
+    @contextmanager
+    def _inference_context(self):
+        """Context manager for inference with device-specific optimizations"""
+        if self.device.type == 'cuda':
+            with torch.cuda.amp.autocast():
+                yield
+        else:
+            yield
     
-    def _parse_annotations(self, outputs: np.ndarray) -> List[Annotation]:
+    def _run_inference(self, input_tensor: torch.Tensor):
+        """Run model inference"""
+        if hasattr(self.model, 'run'):
+            # ONNX Runtime
+            input_name = self.model.get_inputs()[0].name
+            outputs = self.model.run(None, {input_name: input_tensor.cpu().numpy()})
+            return outputs[0]
+        
+        # PyTorch model
+        return self.model(input_tensor).cpu().numpy()
+    
+    def _preprocess(self, frame: np.ndarray):
+        """Preprocess frame to tensor for annotation model"""
+        resized = cv2.resize(frame, self._input_size)
+        
+        # Normalize to [0, 1] and convert to tensor
+        tensor = torch.from_numpy(resized).float() / 255.0
+        
+        # NCHW format: (H, W, C) -> (C, H, W) and add batch dimension
+        tensor = tensor.permute(2, 0, 1).unsqueeze(0)
+        
+        return tensor.to(self.device)
+    
+    def _parse_annotations(self, outputs: np.ndarray):
         """Parse model outputs into Annotation objects"""
         annotations = []
-        confidence_threshold = self.config.get('annotation_confidence_threshold', 0.3)
+        
+        # Handle different output shapes
+        if outputs.ndim > 2:
+            outputs = outputs.squeeze()
+        
+        # Handle empty outputs
+        if outputs.size == 0:
+            return annotations
+        
+        # Ensure outputs is 2D
+        if outputs.ndim == 1:
+            outputs = outputs.reshape(1, -1)
         
         for idx, detection in enumerate(outputs):
-            if len(detection) >= 6:
+            if len(detection) >= self.MIN_DETECTION_SIZE:
                 confidence = float(detection[4])
-                if confidence >= confidence_threshold:
+                if confidence >= self._confidence_threshold:
                     object_class = int(detection[5])
                     annotations.append(Annotation(
                         object_type=f"object_{object_class}",
@@ -140,7 +202,7 @@ class AnnotationModel:
         
         return annotations
     
-    def get_metrics(self) -> Dict[str, float]:
+    def get_metrics(self):
         """Get annotation metrics"""
         if not self.annotation_times:
             return {

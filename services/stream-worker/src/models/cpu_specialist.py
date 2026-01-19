@@ -1,14 +1,17 @@
 """
 CPU Specialist Implementation
-Uses CPU-based inference for object detection
+Uses CPU-based inference for object detection with PyTorch
 """
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import time
-import numpy as np
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
-import cv2
 
-from src.models.specialist_interface import SpecialistInterface, DetectionResult
+import cv2
+import numpy as np
+import torch
+
 from src.core.errors import ModelNotLoadedError, InferenceError
+from src.models.specialist_interface import SpecialistInterface, DetectionResult
 
 if TYPE_CHECKING:
     from src.models.annotation_model import Annotation
@@ -16,51 +19,74 @@ if TYPE_CHECKING:
 
 class CPUSpecialist(SpecialistInterface):
     """
-    CPU-based ML specialist implementation using ONNX Runtime
+    CPU-based ML specialist implementation using PyTorch
     """
     
-    def __init__(self, model_name: str, config: Dict[str, Any]):
+    DEFAULT_INPUT_SIZE = (640, 640)
+    DEFAULT_CONFIDENCE_THRESHOLD = 0.5
+    DEFAULT_NUM_THREADS = 4
+    MAX_METRICS_HISTORY = 100
+    MIN_DETECTION_SIZE = 6  # Minimum number of values in detection array
+    
+    def __init__(self, model_name: str, config: Dict[str, Any]) -> None:
         super().__init__(model_name, config)
-        self.model: Optional[Any] = None
+        self.model: Optional[torch.nn.Module] = None
         self.inference_times: List[float] = []
-        self.max_metrics_history = 100
+        self._max_metrics_history = self.MAX_METRICS_HISTORY
+        self._input_size = config.get('input_size', self.DEFAULT_INPUT_SIZE)
+        self._confidence_threshold = config.get('confidence_threshold', self.DEFAULT_CONFIDENCE_THRESHOLD)
+        self._num_threads = config.get('num_threads', self.DEFAULT_NUM_THREADS)
         
     def load_model(self) -> None:
-        """Load model for CPU inference"""
-        print(f"Loading CPU model: {self.model_name} from {self.config.get('model_path')}")
-        
-        model_path = self.config.get('model_path')
-        if not model_path:
-            raise ValueError("model_path is required in config")
+        """Load model for CPU inference using PyTorch or ONNX Runtime"""
+        model_path = Path(self.config.get('model_path', ''))
+        if not model_path or not model_path.exists():
+            raise ValueError(f"Invalid model path: {model_path}")
         
         try:
-            self.model = self._load_onnx(model_path)
+            print(f"Loading CPU model: {self.model_name} from {model_path}")
+            
+            # Load based on file extension
+            if model_path.suffix in ['.onnx']:
+                self._load_onnx_model(model_path)
+            else:
+                # PyTorch format (.pt, .pth)
+                self.model = torch.load(str(model_path), map_location=self.device)
+                self.model.eval()  # Set to evaluation mode
+            
+            # Optimize for CPU inference
+            if hasattr(torch, 'set_num_threads'):
+                torch.set_num_threads(self._num_threads)
+            
             self.is_loaded = True
             print(f"CPU model loaded successfully: {self.model_name}")
         except Exception as e:
-            print(f"ERROR: Failed to load model: {e}")
-            raise
+            raise RuntimeError(f"Failed to load model: {e}") from e
     
-    def _load_onnx(self, model_path: str) -> Any:
-        """Load ONNX model with CPU execution provider"""
+    def _load_onnx_model(self, model_path: Path) -> None:
+        """Load ONNX model using ONNX Runtime"""
         import onnxruntime as ort
         
         session_options = ort.SessionOptions()
         session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         
-        return ort.InferenceSession(
-            model_path,
+        self.model = ort.InferenceSession(
+            str(model_path),
             sess_options=session_options,
             providers=['CPUExecutionProvider']
         )
     
     def unload_model(self) -> None:
         """Unload model from memory"""
-        self.model = None
+        if self.model is not None:
+            del self.model
+            self.model = None
+        
         self.is_loaded = False
         self.inference_times.clear()
         print(f"CPU model unloaded: {self.model_name}")
     
+    @torch.no_grad()
     def infer(self, frame: np.ndarray, annotations: List['Annotation']) -> List[DetectionResult]:
         """
         Run CPU inference on frame with annotation context
@@ -82,11 +108,11 @@ class CPUSpecialist(SpecialistInterface):
         start_time = time.perf_counter()
         
         try:
-            # Preprocess (annotations can be used for ROI cropping in future)
-            processed = self.preprocess(frame)
+            # Preprocess to tensor
+            input_tensor = self.preprocess(frame)
             
-            # Run ONNX inference
-            detections = self._infer_onnx(processed)
+            # Run inference
+            detections = self._run_inference(input_tensor)
             
             # Enrich detections with annotation context
             detections = self._enrich_with_annotations(detections, annotations)
@@ -98,25 +124,42 @@ class CPUSpecialist(SpecialistInterface):
             return detections
             
         except Exception as e:
-            print(f"ERROR: Inference failed: {e}")
             raise InferenceError(f"Inference failed: {e}") from e
     
-    def _infer_onnx(self, frame: np.ndarray) -> List[DetectionResult]:
-        """Run ONNX Runtime inference"""
-        input_name = self.model.get_inputs()[0].name
-        outputs = self.model.run(None, {input_name: frame})
-        return self._parse_detections(outputs[0])
+    def _run_inference(self, input_tensor: torch.Tensor) -> List[DetectionResult]:
+        """Run model inference"""
+        # Check if ONNX Runtime session
+        if hasattr(self.model, 'run'):
+            # ONNX Runtime
+            input_name = self.model.get_inputs()[0].name
+            outputs = self.model.run(None, {input_name: input_tensor.cpu().numpy()})
+            return self._parse_detections(outputs[0])
+        else:
+            # PyTorch model
+            outputs = self.model(input_tensor).cpu().numpy()
+            return self._parse_detections(outputs)
     
     def _parse_detections(self, outputs: np.ndarray) -> List[DetectionResult]:
         """Parse model outputs into DetectionResult objects"""
         detections = []
-        confidence_threshold = self.config.get('confidence_threshold', 0.5)
         
-        # Adapt this to your model's output format
+        # Handle different output shapes
+        if outputs.ndim > 2:
+            outputs = outputs.squeeze()
+        
+        # Handle empty outputs
+        if outputs.size == 0:
+            return detections
+        
+        # Ensure outputs is 2D
+        if outputs.ndim == 1:
+            outputs = outputs.reshape(1, -1)
+        
+        # Parse detections
         for detection in outputs:
-            if len(detection) >= 6:
+            if len(detection) >= self.MIN_DETECTION_SIZE:
                 confidence = float(detection[4])
-                if confidence >= confidence_threshold:
+                if confidence >= self._confidence_threshold:
                     detections.append(DetectionResult(
                         class_name=f"class_{int(detection[5])}",
                         confidence=confidence,
@@ -158,26 +201,24 @@ class CPUSpecialist(SpecialistInterface):
         return not (x1_max < x2_min or x2_max < x1_min or 
                     y1_max < y2_min or y2_max < y1_min)
     
-    def preprocess(self, frame: np.ndarray) -> np.ndarray:
-        """Preprocess frame for model input"""
-        input_size = self.config.get('input_size', (640, 640))
-        
+    def preprocess(self, frame: np.ndarray) -> torch.Tensor:
+        """Preprocess frame to tensor for model input"""
         # Resize
-        resized = cv2.resize(frame, input_size)
+        resized = cv2.resize(frame, self._input_size)
         
-        # Normalize to [0, 1]
-        normalized = resized.astype(np.float32) / 255.0
+        # Convert to tensor and normalize [0, 1]
+        tensor = torch.from_numpy(resized).float() / 255.0
         
-        # Transpose to NCHW format and add batch dimension
-        preprocessed = np.transpose(normalized, (2, 0, 1))
-        preprocessed = np.expand_dims(preprocessed, axis=0)
+        # Transpose to NCHW format: (H, W, C) -> (C, H, W) and add batch
+        tensor = tensor.permute(2, 0, 1).unsqueeze(0)
         
-        return preprocessed
+        # Move to device (CPU in this case)
+        return tensor.to(self.device)
     
     def _record_inference_time(self, time_ms: float) -> None:
         """Record inference time for metrics"""
         self.inference_times.append(time_ms)
-        if len(self.inference_times) > self.max_metrics_history:
+        if len(self.inference_times) > self._max_metrics_history:
             self.inference_times.pop(0)
     
     def get_metrics(self) -> Dict[str, float]:
