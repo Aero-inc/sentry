@@ -3,9 +3,11 @@ Specialist Interface - Abstract base class for ML inference specialists
 This allows CPU and GPU implementations to be swapped without changing the stream worker logic
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Dict, List
+
 import numpy as np
-from dataclasses import dataclass
+import torch
 
 if TYPE_CHECKING:
     from src.models.annotation_model import Annotation
@@ -17,7 +19,7 @@ class DetectionResult:
     class_name: str
     confidence: float
     bounding_box: List[float]  # [x1, y1, x2, y2]
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class SpecialistInterface(ABC):
@@ -26,10 +28,16 @@ class SpecialistInterface(ABC):
     Allows swapping between CPU and GPU implementations
     """
     
-    def __init__(self, model_name: str, config: Dict[str, Any]):
+    def __init__(self, model_name: str, config: Dict[str, Any]) -> None:
         self.model_name = model_name
         self.config = config
         self.is_loaded = False
+        self.device = self._determine_device()
+    
+    def _determine_device(self) -> torch.device:
+        """Determine the appropriate device for this specialist"""
+        # Override in subclasses to specify device preference
+        return torch.device('cpu')
     
     @abstractmethod
     def load_model(self) -> None:
@@ -65,6 +73,28 @@ class SpecialistInterface(ABC):
         """
         pass
     
-    def preprocess(self, frame: np.ndarray) -> np.ndarray:
-        """Common preprocessing step (can be overridden)"""
-        return frame
+    def preprocess(self, frame: np.ndarray) -> torch.Tensor:
+        """
+        Common preprocessing step (can be overridden)
+        Default implementation converts numpy array to torch tensor
+        
+        Args:
+            frame: RGB image as numpy array (H, W, 3)
+            
+        Returns:
+            Preprocessed tensor ready for model input
+        """
+        tensor = torch.from_numpy(frame).float()
+        return tensor.to(self.device)
+    
+    def __enter__(self) -> 'SpecialistInterface':
+        """Context manager support"""
+        if not self.is_loaded:
+            self.load_model()
+        return self
+    
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
+        """Context manager cleanup"""
+        if self.is_loaded:
+            self.unload_model()
+        return False

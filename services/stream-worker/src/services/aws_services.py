@@ -1,22 +1,32 @@
 """
 AWS service integrations
 """
-import boto3
-from typing import Dict, Any, Optional
 from datetime import datetime
-import numpy as np
+from typing import Any, Dict, Optional
+
+import boto3
 import cv2
+import numpy as np
 
 
 class S3Service:
-    """Handle S3 operations"""
+    """Handle S3 operations for model storage and artifacts"""
     
     def __init__(self, artifacts_bucket: Optional[str], region: str = 'us-east-1'):
         self.artifacts_bucket = artifacts_bucket
+        self.region = region
         self.client = boto3.client('s3', region_name=region) if artifacts_bucket else None
     
-    def download_model(self, s3_key: str, local_path: str) -> bool:
-        """Download model from S3"""
+    def download_model(self, s3_key: str, local_path: str):
+        """Download model from S3
+        
+        Args:
+            s3_key: S3 object key
+            local_path: Local file path to save the model
+            
+        Returns:
+            True if successful, False otherwise
+        """
         if not self.artifacts_bucket or not self.client:
             print("WARNING: S3 artifacts bucket not configured")
             return False
@@ -29,44 +39,24 @@ class S3Service:
         except Exception as e:
             print(f"ERROR: Failed to download model: {e}")
             return False
-    
-    def save_frame(self, stream_id: str, frame_index: int, frame: np.ndarray) -> Optional[str]:
-        """Save frame to S3 clips bucket"""
-        if not self.clips_bucket or not self.client:
-            return None
-        
-        try:
-            # Encode frame as JPEG
-            _, buffer = cv2.imencode('.jpg', cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-            
-            # Generate S3 key
-            key = f"{stream_id}/{datetime.utcnow().strftime('%Y%m%d')}/frame_{frame_index:08d}.jpg"
-            
-            # Upload
-            self.client.put_object(
-                Bucket=self.clips_bucket,
-                Key=key,
-                Body=buffer.tobytes(),
-                ContentType='image/jpeg'
-            )
-            
-            print(f"Frame saved to s3://{self.clips_bucket}/{key}")
-            return key
-        except Exception as e:
-            print(f"ERROR: Failed to save frame to S3: {e}")
-            return None
-
 
 class CloudWatchService:
-    """Handle CloudWatch metrics and logs"""
+    """Handle CloudWatch metrics"""
+    
+    NAMESPACE = 'Sentry/StreamWorker'
     
     def __init__(self, environment: str, region: str = 'us-east-1'):
         self.environment = environment
+        self.region = region
         self.client = boto3.client('cloudwatch', region_name=region)
-        self.namespace = 'Sentry/StreamWorker'
     
-    def publish_metrics(self, stream_id: str, metrics: Dict[str, float]) -> None:
-        """Publish custom metrics to CloudWatch"""
+    def publish_metrics(self, stream_id: str, metrics: Dict[str, float]):
+        """Publish custom metrics to CloudWatch
+        
+        Args:
+            stream_id: Stream identifier
+            metrics: Dictionary of metric names to values
+        """
         try:
             metric_data = []
             
@@ -96,7 +86,7 @@ class CloudWatchService:
             
             if metric_data:
                 self.client.put_metric_data(
-                    Namespace=self.namespace,
+                    Namespace=self.NAMESPACE,
                     MetricData=metric_data
                 )
         except Exception as e:
