@@ -159,6 +159,9 @@ class AnnotationModel:
         """Preprocess frame to tensor for annotation model"""
         resized = cv2.resize(frame, self._input_size)
         
+        # Ensure array is writable and contiguous for torch.from_numpy
+        resized = np.ascontiguousarray(resized)
+        
         # Normalize to [0, 1] and convert to tensor
         tensor = torch.from_numpy(resized).float() / 255.0
         
