@@ -32,6 +32,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
+# Set Python unbuffered mode (critical for container logging)
+ENV PYTHONUNBUFFERED=1
+
 # Run with gunicorn for production
 # Using 1 worker for now since we have in-memory state (active_streams)
 # TODO: For production with multiple workers, implement shared state with Redis
