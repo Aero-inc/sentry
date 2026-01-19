@@ -210,7 +210,7 @@ __marimo__/
 data/
 
 # Predictions
-runs/detect/predict/
+runs/
 
 # Terraform
 *.tfstate
@@ -230,18 +230,25 @@ override.tf.json
 # AWS
 *.pem
 
-# ML Models
+# ML Models (binary files only, not Python source code)
 *.onnx
 *.pt
 *.pth
 *.h5
 *.pb
-models/
 *.weights
 *.caffemodel
 
 # Docker
 docker-compose.override.yml
+docker-compose.local.override.yml
+
+# Node.js
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # IDE
 .idea/

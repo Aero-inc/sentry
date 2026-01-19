@@ -11,10 +11,9 @@ import cv2
 class S3Service:
     """Handle S3 operations"""
     
-    def __init__(self, artifacts_bucket: Optional[str], clips_bucket: Optional[str]):
+    def __init__(self, artifacts_bucket: Optional[str], region: str = 'us-east-1'):
         self.artifacts_bucket = artifacts_bucket
-        self.clips_bucket = clips_bucket
-        self.client = boto3.client('s3') if (artifacts_bucket or clips_bucket) else None
+        self.client = boto3.client('s3', region_name=region) if artifacts_bucket else None
     
     def download_model(self, s3_key: str, local_path: str) -> bool:
         """Download model from S3"""
@@ -61,9 +60,9 @@ class S3Service:
 class CloudWatchService:
     """Handle CloudWatch metrics and logs"""
     
-    def __init__(self, environment: str):
+    def __init__(self, environment: str, region: str = 'us-east-1'):
         self.environment = environment
-        self.client = boto3.client('cloudwatch')
+        self.client = boto3.client('cloudwatch', region_name=region)
         self.namespace = 'Sentry/StreamWorker'
     
     def publish_metrics(self, stream_id: str, metrics: Dict[str, float]) -> None:

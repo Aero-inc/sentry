@@ -5,6 +5,7 @@ Quick reference for common operations.
 ## 🚀 Deployments
 
 ### Staging
+
 ```
 Actions → Deploy to Staging
 ├─ Branch: <your-branch>
@@ -13,8 +14,10 @@ Actions → Deploy to Staging
 ```
 
 ### Production
+
 **Automatic**: Merge to main
-**Manual**: 
+**Manual**:
+
 ```
 Actions → Deploy to Production
 ├─ deploy_infrastructure: false (or true if needed)
@@ -26,6 +29,7 @@ Actions → Deploy to Production
 ## 📊 Monitoring
 
 ### Logs
+
 ```bash
 # Real-time logs
 aws logs tail /ecs/sentry-staging-backend --follow
@@ -39,6 +43,7 @@ aws logs filter-log-events \
 ```
 
 ### Service Status
+
 ```bash
 # Staging
 aws ecs describe-services \
@@ -57,6 +62,7 @@ aws ecs list-tasks \
 ```
 
 ### ECR Images
+
 ```bash
 # List images
 aws ecr list-images \
@@ -73,6 +79,7 @@ aws ecr describe-images \
 ## 🛠️ Terraform Operations
 
 ### Local Testing (Optional)
+
 ```bash
 cd terraform
 
@@ -94,6 +101,7 @@ terraform state list
 ## 🔧 Configuration
 
 ### Update Environment Settings
+
 ```bash
 # Edit configuration
 vim terraform/environments/staging.tfvars
@@ -108,6 +116,7 @@ Actions → Deploy to Staging → deploy_infrastructure=true
 ```
 
 ### Scale ECS Tasks
+
 ```hcl
 # In terraform/environments/production.tfvars
 ecs_desired_count = 3  # Change from 2 to 3
@@ -120,9 +129,11 @@ Then deploy infrastructure.
 ## 🐛 Troubleshooting
 
 ### Deployment Failed
+
 1. Check GitHub Actions logs
 2. Review CloudWatch logs
 3. Check ECS service events:
+
 ```bash
 aws ecs describe-services \
   --cluster sentry-staging-cluster \
@@ -130,6 +141,7 @@ aws ecs describe-services \
 ```
 
 ### ECS Task Won't Start
+
 ```bash
 # Find stopped tasks
 aws ecs list-tasks \
@@ -146,6 +158,7 @@ aws logs tail /ecs/sentry-staging-backend --since 30m
 ```
 
 ### Check S3 Buckets
+
 ```bash
 # List buckets
 aws s3 ls | grep sentry
@@ -162,6 +175,7 @@ curl http://sentry-production-frontend.s3-website-us-east-1.amazonaws.com
 ## 🔄 Common Workflows
 
 ### Deploy Feature to Staging
+
 ```bash
 git checkout -b feature/my-feature
 # Make changes
@@ -170,6 +184,7 @@ git push origin feature/my-feature
 ```
 
 ### Deploy to Production
+
 ```bash
 git checkout main
 git merge feature/my-feature
@@ -178,6 +193,7 @@ git push
 ```
 
 ### Rollback
+
 ```bash
 # Redeploy previous commit
 git checkout main
@@ -187,6 +203,7 @@ git push
 ```
 
 ### Update Infrastructure
+
 ```bash
 # Edit terraform files
 vim terraform/ecs.tf
@@ -204,6 +221,7 @@ Actions → Deploy to Production → Approve
 ## 🔐 Secrets Management
 
 ### GitHub Secrets
+
 ```
 Settings → Secrets and variables → Actions
 
@@ -215,6 +233,7 @@ Required:
 ```
 
 ### Environment Secrets
+
 ```
 Settings → Environments → <environment> → Add secret
 ```
@@ -224,11 +243,13 @@ Settings → Environments → <environment> → Add secret
 ## 📝 Resource Naming
 
 ### Pattern
+
 ```
 {project}-{environment}-{resource}
 ```
 
 ### Examples
+
 ```
 sentry-staging-cluster
 sentry-production-backend
@@ -241,6 +262,7 @@ sentry-staging-frontend (S3 bucket)
 ## 🆘 Emergency Commands
 
 ### Stop All Tasks
+
 ```bash
 # Get task ARNs
 aws ecs list-tasks \
@@ -254,6 +276,7 @@ aws ecs stop-task \
 ```
 
 ### Scale to Zero
+
 ```bash
 aws ecs update-service \
   --cluster sentry-production-cluster \
@@ -262,6 +285,7 @@ aws ecs update-service \
 ```
 
 ### Force Deployment
+
 ```bash
 aws ecs update-service \
   --cluster sentry-production-cluster \
@@ -279,6 +303,21 @@ aws ecs update-service \
 4. Use meaningful commit messages
 5. Tag production releases
 6. Review costs weekly
+
+---
+
+## Datasets Used
+
+- **USRT (US Real-time gun detection in CCTV)**
+  - [Project Page](https://deepknowledge-us.github.io/US-Real-time-gun-detection-in-CCTV-An-open-problem-dataset/)
+  - [Reference Paper](https://doi.org/10.1016/j.neunet.2020.09.013)
+  - [Download Instructions](https://github.com/srikarym/CCTV-Gun/blob/master/dataset_instructions.md#usrt)
+- **UCF-Crime**
+  - [Dataset Link](https://www.dropbox.com/scl/fo/2aczdnx37hxvcfdo4rq4q/AOjRokSTaiKxXmgUyqdcI6k?dl=0&e=1&rlkey=5bg7mxxbq46t7aujfch46dlvz) (Use `Anomaly-Videos-Part-3.zip` only)
+  - [Reference Paper](https://doi.org/10.1109/CVPR.2018.00678)
+  - [Download Instructions](https://github.com/srikarym/CCTV-Gun/blob/master/dataset_instructions.md#ucf)
+- **Kaggle's CCTV weapons dataset**
+  - [Dataset Link](https://www.kaggle.com/datasets/simuletic/cctv-weapon-dataset)
 
 ---
 

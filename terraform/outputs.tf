@@ -45,3 +45,33 @@ output "ecs_security_group_id" {
   value       = module.vpc.ecs_security_group_id
 }
 
+output "backend_api_url" {
+  description = "Backend API URL (Load Balancer DNS)"
+  value       = "http://${aws_lb.backend.dns_name}"
+}
+
+output "backend_alb_dns" {
+  description = "Backend ALB DNS name"
+  value       = aws_lb.backend.dns_name
+}
+
+output "cloudfront_frontend_url" {
+  description = "CloudFront distribution URL for frontend (HTTPS)"
+  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+}
+
+output "cloudfront_backend_url" {
+  description = "CloudFront distribution URL for backend API (HTTPS)"
+  value       = "https://${aws_cloudfront_distribution.backend.domain_name}"
+}
+
+output "cloudfront_frontend_domain" {
+  description = "CloudFront distribution domain name for frontend"
+  value       = aws_cloudfront_distribution.frontend.domain_name
+}
+
+output "cloudfront_backend_domain" {
+  description = "CloudFront distribution domain name for backend"
+  value       = aws_cloudfront_distribution.backend.domain_name
+}
+

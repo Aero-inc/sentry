@@ -32,7 +32,8 @@ def health_check() -> Dict[str, Any]:
     return jsonify({
         'status': 'healthy',
         'service': 'stream-worker',
-        'specialist_loaded': stats.get('specialist_loaded', False),
+        'annotation_model_loaded': stats.get('annotation_model_loaded', False),
+        'specialists_loaded': stats.get('specialists_loaded', []),
         'active_streams': stats.get('active_streams', 0)
     }), 200
 

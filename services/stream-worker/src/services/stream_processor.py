@@ -14,51 +14,112 @@ from src.core.errors import StreamNotFoundError, InvalidFrameError
 from src.services.aws_services import S3Service, CloudWatchService
 from src.models.specialist_interface import SpecialistInterface, DetectionResult
 from src.models.cpu_specialist import CPUSpecialist
-
+from src.models.annotation_model import AnnotationModel, Annotation
+from src.services.decision_maker import DecisionMaker, SpecialistDecision
 
 class StreamProcessor:
     """
     Main stream processor for video processing
-    Orchestrates frame sampling, validation, ML inference, and actions
+    Pipeline: Annotation → Decision Maker → Specialist Models → Actions
     """
     
     def __init__(self, cfg: Config, s3: S3Service, cloudwatch: CloudWatchService):
         self.config = cfg
         self.s3_service = s3
         self.cloudwatch_service = cloudwatch
-        self.specialist: SpecialistInterface = None
+        
+        # Pipeline components
+        self.annotation_model: AnnotationModel = None
+        self.decision_maker: DecisionMaker = None
+        self.specialists: Dict[str, SpecialistInterface] = {}
+        
         self.active_streams: Dict[str, StreamConfig] = {}
         self.stats = {
             'frames_processed': 0,
             'frames_sampled': 0,
-            'total_detections': 0
+            'frames_annotated': 0,
+            'total_detections': 0,
+            'specialist_invocations': 0
         }
         
-        self._initialize_specialist()
+        self._initialize_pipeline()
     
-    def _initialize_specialist(self) -> None:
-        """Initialize ML specialist"""
-        print("Initializing ML specialist")
+    def _initialize_pipeline(self) -> None:
+        """Initialize annotation model, decision maker, and specialists"""
+        print("Initializing ML pipeline")
         
         try:
-            model_config = self.config.to_model_config()
-            self.specialist = CPUSpecialist('detector', model_config)
+            # Initialize annotation model
+            annotator_path = self.config.get_local_model_path('annotator')
+            annotation_config = {
+                'annotation_model_path': annotator_path,
+                'annotation_input_size': self.config.model_input_size,
+                'annotation_confidence_threshold': 0.3
+            }
+            self.annotation_model = AnnotationModel(annotation_config)
             
-            # Download model from S3 if needed
-            if self.config.s3_artifacts_bucket and not os.path.exists(self.config.model_path):
-                os.makedirs(os.path.dirname(self.config.model_path), exist_ok=True)
-                self.s3_service.download_model('models/detector.onnx', self.config.model_path)
+            # Download models from S3 on startup
+            if self.config.s3_artifacts_bucket:
+                print(f"Downloading models from S3: {self.config.s3_artifacts_bucket}")
+                os.makedirs('/models', exist_ok=True)
+                
+                # Download annotator model
+                annotator_s3_key = self.config.get_s3_model_key('annotator')
+                self.s3_service.download_model(annotator_s3_key, annotator_path)
+                print(f"Downloaded {annotator_s3_key} to {annotator_path}")
+                
+                # Download specialist models
+                cpu_specialist_path = self.config.get_local_model_path('cpu_specialist')
+                cpu_specialist_s3_key = self.config.get_s3_model_key('cpu_specialist')
+                self.s3_service.download_model(cpu_specialist_s3_key, cpu_specialist_path)
+                print(f"Downloaded {cpu_specialist_s3_key} to {cpu_specialist_path}")
             
-            # Load model
-            if os.path.exists(self.config.model_path):
-                self.specialist.load_model()
-                print("Specialist model loaded successfully")
+            # Load annotation model
+            if os.path.exists(annotator_path):
+                self.annotation_model.load_model()
+                print("Annotation model loaded successfully")
             else:
-                print("WARNING: Model file not found, specialist will not be available")
+                print("WARNING: Annotation model file not found")
+            
+            # Initialize decision maker
+            decision_config = {
+                'high_priority_objects': ['person', 'vehicle', 'object_0'],
+                'confidence_threshold_specialist': 0.7,
+                'min_annotations_for_specialist': 1
+            }
+            self.decision_maker = DecisionMaker(decision_config)
+            print("Decision maker initialized")
+            
+            # Initialize specialists
+            self._initialize_specialists()
+            
+            print("ML pipeline initialized successfully")
+            
+        except Exception as e:
+            print(f"ERROR: Failed to initialize pipeline: {e}")
+            # Continue without models for graceful degradation
+    
+    def _initialize_specialists(self) -> None:
+        """Initialize specialist models"""
+        try:
+            # Initialize CPU specialist
+            cpu_specialist_path = self.config.get_local_model_path('cpu_specialist')
+            model_config = {
+                'model_path': cpu_specialist_path,
+                'confidence_threshold': self.config.confidence_threshold,
+                'input_size': self.config.model_input_size
+            }
+            cpu_specialist = CPUSpecialist('cpu_detector', model_config)
+            
+            if os.path.exists(cpu_specialist_path):
+                cpu_specialist.load_model()
+                self.specialists['cpu_detector'] = cpu_specialist
+                print("CPU specialist loaded successfully")
+            else:
+                print("WARNING: CPU specialist model file not found")
                 
         except Exception as e:
-            print(f"ERROR: Failed to initialize specialist: {e}")
-            # Continue without model for graceful degradation
+            print(f"ERROR: Failed to initialize specialists: {e}")
     
     def start_stream(self, stream_config: StreamConfig) -> Dict[str, Any]:
         """Start processing a stream"""
@@ -122,46 +183,73 @@ class StreamProcessor:
         if not self._validate_frame(frame):
             raise InvalidFrameError(f"Invalid frame: {stream_id}/{frame_index}")
         
-        # Run inference
-        detections: List[DetectionResult] = []
-        inference_metrics: Dict[str, float] = {}
+        # PIPELINE STEP 1: Annotation Model
+        annotations: List[Annotation] = []
+        annotation_metrics: Dict[str, float] = {}
         
-        if self.specialist and self.specialist.is_loaded:
+        if self.annotation_model and self.annotation_model.is_loaded:
             try:
-                detections = self.specialist.infer(frame)
-                inference_metrics = self.specialist.get_metrics()
-                
-                # Filter by confidence and limit count
-                detections = [
-                    d for d in detections 
-                    if d.confidence >= stream_config.min_confidence
-                ][:stream_config.max_detections_per_frame]
-                
-                self.stats['total_detections'] += len(detections)
-                
+                annotations = self.annotation_model.annotate(frame)
+                annotation_metrics = self.annotation_model.get_metrics()
+                self.stats['frames_annotated'] += 1
+                print(f"ANNOTATION: stream={stream_id} frame={frame_index} annotations={len(annotations)}")
             except Exception as e:
-                print(f"ERROR: Inference error: {e}")
+                print(f"ERROR: Annotation error: {e}")
         
-        # Decide actions
-        actions = self._decide_actions(stream_config, detections)
+        # PIPELINE STEP 2: Decision Maker
+        specialist_decisions: List[SpecialistDecision] = []
+        if self.decision_maker and annotations:
+            try:
+                specialist_decisions = self.decision_maker.decide(annotations)
+                print(f"DECISIONS: stream={stream_id} frame={frame_index} decisions={len(specialist_decisions)}")
+            except Exception as e:
+                print(f"ERROR: Decision making error: {e}")
         
-        # Execute actions
-        if actions:
-            self._execute_actions(stream_id, frame_index, frame, actions)
+        # PIPELINE STEP 3: Specialist Models
+        detections: List[DetectionResult] = []
+        specialist_metrics: Dict[str, Any] = {}
+        
+        for decision in specialist_decisions:
+            specialist = self.specialists.get(decision.specialist_name)
+            if specialist and specialist.is_loaded:
+                try:
+                    # Pass both frame and annotations to specialist
+                    specialist_detections = specialist.infer(frame, decision.annotations)
+                    detections.extend(specialist_detections)
+                    specialist_metrics[decision.specialist_name] = specialist.get_metrics()
+                    self.stats['specialist_invocations'] += 1
+                    
+                    print(f"SPECIALIST: {decision.specialist_name} detected {len(specialist_detections)} objects (reason: {decision.reason})")
+                    
+                except Exception as e:
+                    print(f"ERROR: Specialist {decision.specialist_name} inference error: {e}")
+        
+        # Filter by confidence and limit count
+        detections = [
+            d for d in detections 
+            if d.confidence >= stream_config.min_confidence
+        ][:stream_config.max_detections_per_frame]
+        
+        self.stats['total_detections'] += len(detections)
         
         # Publish metrics
-        self._publish_metrics(stream_id, detections, inference_metrics)
+        combined_metrics = {
+            **annotation_metrics,
+            **specialist_metrics
+        }
+        self._publish_metrics(stream_id, detections, combined_metrics)
         
         # Log detections
-        print(f"DETECTION: stream={stream_id} frame={frame_index} detections={len(detections)} actions={actions}")
+        print(f"FINAL: stream={stream_id} frame={frame_index} annotations={len(annotations)} detections={len(detections)}")
         
         return {
             'stream_id': stream_id,
             'frame_index': frame_index,
             'sampled': True,
+            'annotations': [asdict(a) for a in annotations],
+            'decisions': [asdict(d) for d in specialist_decisions],
             'detections': [asdict(d) for d in detections],
-            'actions': actions,
-            'metrics': inference_metrics
+            'metrics': combined_metrics
         }
     
     @staticmethod
@@ -179,38 +267,6 @@ class StreamProcessor:
         
         return True
     
-    @staticmethod
-    def _decide_actions(stream_config: StreamConfig, detections: List[DetectionResult]) -> List[str]:
-        """Determine actions based on detections"""
-        actions = []
-        
-        high_conf_detections = [d for d in detections if d.confidence > 0.8]
-        
-        if high_conf_detections:
-            actions.append('alert')
-        
-        if len(detections) > 5:
-            actions.append('save_clip')
-        
-        if stream_config.enable_clip_recording and detections:
-            actions.append('record_clip')
-        
-        return actions
-    
-    def _execute_actions(
-        self,
-        stream_id: str,
-        frame_index: int,
-        frame: np.ndarray,
-        actions: List[str]
-    ) -> None:
-        """Execute decided actions"""
-        for action in actions:
-            if action == 'save_clip':
-                self.s3_service.save_frame(stream_id, frame_index, frame)
-            elif action == 'alert':
-                print(f"ALERT: High-confidence detection in {stream_id}/{frame_index}")
-    
     def _publish_metrics(
         self,
         stream_id: str,
@@ -226,13 +282,20 @@ class StreamProcessor:
     
     def get_stats(self) -> Dict[str, Any]:
         """Get processor statistics"""
+        annotation_metrics = {}
+        if self.annotation_model and self.annotation_model.is_loaded:
+            annotation_metrics = self.annotation_model.get_metrics()
+        
         specialist_metrics = {}
-        if self.specialist and self.specialist.is_loaded:
-            specialist_metrics = self.specialist.get_metrics()
+        for name, specialist in self.specialists.items():
+            if specialist and specialist.is_loaded:
+                specialist_metrics[name] = specialist.get_metrics()
         
         return {
             'active_streams': len(self.active_streams),
-            'specialist_loaded': self.specialist.is_loaded if self.specialist else False,
+            'annotation_model_loaded': self.annotation_model.is_loaded if self.annotation_model else False,
+            'specialists_loaded': list(self.specialists.keys()),
+            'annotation_metrics': annotation_metrics,
             'specialist_metrics': specialist_metrics,
             **self.stats
         }
