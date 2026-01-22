@@ -60,6 +60,18 @@ resource "aws_ecs_task_definition" "backend" {
         {
           name  = "PORT"
           value = "8080"
+        },
+        {
+          name  = "OMP_NUM_THREADS"
+          value = "0"
+        },
+        {
+          name  = "MKL_NUM_THREADS"
+          value = "0"
+        },
+        {
+          name  = "TORCH_NUM_THREADS"
+          value = "0"
         }
       ]
       logConfiguration = {
@@ -73,10 +85,11 @@ resource "aws_ecs_task_definition" "backend" {
       healthCheck = {
         command     = ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
         interval    = 30
-        timeout     = 5
+        timeout     = 10
         retries     = 3
-        startPeriod = 60
+        startPeriod = 120
       }
+      stopTimeout = 60
     }
   ])
 
@@ -103,7 +116,14 @@ resource "aws_ecs_service" "backend" {
   }
 
   deployment_maximum_percent         = 200
-  deployment_minimum_healthy_percent = 100
+  deployment_minimum_healthy_percent = 50
+  
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+  
+  enable_execute_command = var.environment == "staging" ? true : false
 
   depends_on = [
     aws_lb_listener.http,
@@ -140,9 +160,9 @@ resource "aws_appautoscaling_policy" "backend_cpu" {
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageCPUUtilization"
     }
-    target_value       = 70.0
-    scale_in_cooldown  = 300
-    scale_out_cooldown = 60
+    target_value       = 80.0
+    scale_in_cooldown  = 600
+    scale_out_cooldown = 120
   }
 }
 

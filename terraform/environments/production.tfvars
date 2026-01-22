@@ -4,11 +4,11 @@ aws_region   = "us-east-1"
 project_name = "aero-sentry-2026"
 
 # ECS Configuration
-ecs_task_cpu      = 512
-ecs_task_memory   = 1024
+ecs_task_cpu      = 2048 # 2 vCPU for ML inference
+ecs_task_memory   = 4096 # 4GB for ML models + workers
 ecs_desired_count = 2
 ecs_min_capacity  = 2
-ecs_max_capacity  = 3
+ecs_max_capacity  = 6
 
 # VPC Configuration
 vpc_cidr           = "10.1.0.0/16"

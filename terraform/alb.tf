@@ -65,15 +65,15 @@ resource "aws_lb_target_group" "backend" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 5
+    unhealthy_threshold = 2
+    timeout             = 10
     interval            = 30
     path                = "/health"
     protocol            = "HTTP"
     matcher             = "200"
   }
 
-  deregistration_delay = 30
+  deregistration_delay = 60
 
   tags = merge(
     var.tags,

@@ -30,6 +30,15 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    volumes:
+      # Mount source code for hot reload (read-only for safety)
+      - ./services/stream-worker/src/api:/app/src/api:ro
+      - ./services/stream-worker/src/core:/app/src/core:ro
+      - ./services/stream-worker/src/services:/app/src/services:ro
+      - ./services/stream-worker/app.py:/app/app.py:ro
+      - ./services/stream-worker/gunicorn_config.py:/app/gunicorn_config.py:ro
+      # Writable volume for ML models (persisted between restarts)
+      - stream-worker-models:/app/src/models/weights
     environment:
       - ENVIRONMENT=staging
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
@@ -43,6 +52,7 @@ services:
       - LOG_LEVEL=DEBUG
       - MODEL_INPUT_SIZE=640,640
       - CONFIDENCE_THRESHOLD=0.5
+      - GUNICORN_RELOAD=true
     depends_on:
       redis:
         condition: service_healthy
@@ -75,3 +85,4 @@ networks:
 
 volumes:
   redis-data:
+  stream-worker-models:
