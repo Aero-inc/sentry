@@ -21,6 +21,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY *.py ./
 COPY src/ ./src/
+COPY entrypoint.sh ./
+
+# Make entrypoint executable
+RUN chmod +x entrypoint.sh
 
 # Create models directory
 RUN mkdir -p /models
@@ -32,10 +36,14 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Set Python unbuffered mode (critical for container logging)
-ENV PYTHONUNBUFFERED=1
-
-# Run with gunicorn for production
-# Using 1 worker for now since we have in-memory state (active_streams)
-# TODO: For production with multiple workers, implement shared state with Redis
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "120", "--access-logfile", "-", "app:app"]
+# Start via entrypoint script
+# Entrypoint calculates optimal workers based on available CPU cores
+CMD ["./entrypoint.sh", \
+     "--workers", "4", \
+     "--worker-class", "sync", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "100", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "--log-level", "info", \
+     "app:app"]

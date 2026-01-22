@@ -30,6 +30,11 @@ class Config:
     # AWS Resources
     s3_artifacts_bucket: Optional[str]
     
+    # Redis
+    redis_host: Optional[str]
+    redis_port: int
+    redis_db: int
+    
     # Application
     port: int
     log_level: str
@@ -45,6 +50,9 @@ class Config:
             environment=os.getenv('ENVIRONMENT', 'staging'),
             aws_region=os.getenv('AWS_REGION', 'us-east-1'),
             s3_artifacts_bucket=os.getenv('S3_ARTIFACTS_BUCKET'),
+            redis_host=os.getenv('REDIS_HOST'),
+            redis_port=int(os.getenv('REDIS_PORT', '6379')),
+            redis_db=int(os.getenv('REDIS_DB', '0')),
             port=int(os.getenv('PORT', '8080')),
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
             model_input_size=tuple(map(int, os.getenv('MODEL_INPUT_SIZE', '640,640').split(','))),

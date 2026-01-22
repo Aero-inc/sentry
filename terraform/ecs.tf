@@ -50,6 +50,14 @@ resource "aws_ecs_task_definition" "backend" {
           value = aws_s3_bucket.buckets["artifacts"].id
         },
         {
+          name  = "REDIS_HOST"
+          value = aws_elasticache_cluster.redis.cache_nodes[0].address
+        },
+        {
+          name  = "REDIS_PORT"
+          value = tostring(aws_elasticache_cluster.redis.cache_nodes[0].port)
+        },
+        {
           name  = "PORT"
           value = "8080"
         }
@@ -97,7 +105,10 @@ resource "aws_ecs_service" "backend" {
   deployment_maximum_percent         = 200
   deployment_minimum_healthy_percent = 100
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [
+    aws_lb_listener.http,
+    aws_elasticache_cluster.redis
+  ]
 
   lifecycle {
     ignore_changes = [task_definition, desired_count]
@@ -106,3 +117,49 @@ resource "aws_ecs_service" "backend" {
   tags = var.tags
 }
 
+# Auto-scaling target
+resource "aws_appautoscaling_target" "backend" {
+  max_capacity       = var.ecs_max_capacity
+  min_capacity       = var.ecs_min_capacity
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.backend.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+
+  depends_on = [aws_ecs_service.backend]
+}
+
+# Auto-scaling policy - CPU based
+resource "aws_appautoscaling_policy" "backend_cpu" {
+  name               = "${var.project_name}-${var.environment}-backend-cpu-scaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.backend.resource_id
+  scalable_dimension = aws_appautoscaling_target.backend.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.backend.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = 70.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
+
+# Auto-scaling policy - Memory based
+resource "aws_appautoscaling_policy" "backend_memory" {
+  name               = "${var.project_name}-${var.environment}-backend-memory-scaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.backend.resource_id
+  scalable_dimension = aws_appautoscaling_target.backend.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.backend.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+    target_value       = 80.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
