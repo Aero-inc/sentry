@@ -5,7 +5,7 @@ project_name = "aero-sentry-2026" # Make this globally unique
 
 # ECS Configuration
 ecs_task_cpu      = 1024 # 1 vCPU
-ecs_task_memory   = 2048 # Increased from 512MB - PyTorch model + frame processing needs more RAM
+ecs_task_memory   = 2048 # Workers share ML models via preload
 ecs_desired_count = 2
 ecs_min_capacity  = 2
 ecs_max_capacity  = 3
