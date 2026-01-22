@@ -75,3 +75,13 @@ output "cloudfront_backend_domain" {
   value       = aws_cloudfront_distribution.backend.domain_name
 }
 
+output "redis_endpoint" {
+  description = "Redis cluster endpoint"
+  value       = aws_elasticache_cluster.redis.cache_nodes[0].address
+}
+
+output "redis_port" {
+  description = "Redis cluster port"
+  value       = aws_elasticache_cluster.redis.cache_nodes[0].port
+}
+
