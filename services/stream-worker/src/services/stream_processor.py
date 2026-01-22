@@ -24,12 +24,12 @@ class StreamProcessor:
     Main stream processor for video processing
     Pipeline: Annotation → Decision Maker → Specialist Models → Actions
     """
-    
+
     # Frame validation constants
     MIN_FRAME_DIM = 100
     MAX_FRAME_DIM = 4096
     EXPECTED_CHANNELS = 3
-    
+
     def __init__(self, cfg: Config, s3: S3Service, cloudwatch: CloudWatchService):
         self.config = cfg
         self.s3_service = s3

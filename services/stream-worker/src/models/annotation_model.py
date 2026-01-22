@@ -7,15 +7,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import time
+from enum import Enum, auto
 
 import cv2
 import numpy as np
+import torch
+from torchvision.transforms import v2 as T
 
 try:
     import onnxruntime as ort
     HAS_ONNXRUNTIME = True
 except ImportError:
     HAS_ONNXRUNTIME = False
+
+
+class RuntimeBackend(Enum):
+    PYTORCH_CPU = auto()
+    PYTORCH_GPU = auto()  # placeholders because no gpu
+    ORT_CPU = auto()
+    ORT_GPU = auto()  # placeholders because no gpu
 
 
 @dataclass
@@ -44,7 +54,51 @@ class AnnotationModel:
         self.annotation_times: List[float] = []
         self._input_size = config.get('annotation_input_size', self.DEFAULT_INPUT_SIZE)
         self._confidence_threshold = config.get('annotation_confidence_threshold', self.DEFAULT_CONFIDENCE_THRESHOLD)
-        
+        self._transform = T.Compose([
+            T.ToImage(),
+            T.Resize(self._input_size),
+            T.ToDtype(torch.float32, scale=True),
+        ])
+    
+    def _determine_runtime_backend(self) -> RuntimeBackend:
+        """Decide backend runtime for inference. Based on:
+        - self.model is ONNX Runtime InferenceSession
+        - CUDA availability
+        Result stored in self._backend.
+        """
+        # Default (safe) fallback
+        backend = RuntimeBackend.PYTORCH_CPU
+
+        # ONNX Runtime session?
+        if HAS_ONNXRUNTIME and self.model is not None and hasattr(self.model, "run"):
+            # Providers tell us what execution provider is active
+            providers = []
+            try:
+                providers = list(self.model.get_providers())
+            except Exception:
+                providers = ['CPUExecutionProvider']
+
+            # CPU-only Docker build
+            if any("CUDAExecutionProvider" in p for p in providers):
+                backend = RuntimeBackend.ORT_GPU  # Unavailable
+            else:
+                backend = RuntimeBackend.ORT_CPU
+        else:
+            # PyTorch module path
+            if self.device.type == "cuda":
+                backend = RuntimeBackend.PYTORCH_GPU  # Unavailable
+            else:
+                backend = RuntimeBackend.PYTORCH_CPU
+
+        self._backend = backend
+        return backend
+    
+    def _is_ort(self) -> bool:
+        return getattr(self, "_backend", None) in (RuntimeBackend.ORT_CPU, RuntimeBackend.ORT_GPU)
+    
+    def _is_torch(self) -> bool:
+        return getattr(self, "_backend", None) in (RuntimeBackend.PYTORCH_CPU, RuntimeBackend.PYTORCH_GPU)
+
     def load_model(self):
         """Load annotation model using ONNX Runtime"""
         model_path = Path(self.config.get('annotation_model_path', ''))
@@ -58,7 +112,8 @@ class AnnotationModel:
             print(f"Loading ONNX annotation model from {model_path}")
             self._load_onnx_model(model_path)
             self.is_loaded = True
-            print(f"ONNX annotation model loaded successfully")
+            self._determine_runtime_backend()
+            print(f"Annotation model loaded successfully on {self.device}")
         except Exception as e:
             raise RuntimeError(f"Failed to load annotation model: {e}") from e
     
@@ -141,28 +196,54 @@ class AnnotationModel:
         except Exception as e:
             print(f"WARNING: Model warmup failed: {e}")
     
-    def _run_inference(self, input_array: np.ndarray):
-        """Run ONNX model inference"""
-        input_name = self.model.get_inputs()[0].name
-        outputs = self.model.run(None, {input_name: input_array})
-        return outputs[0]
-    
-    def _preprocess(self, frame: np.ndarray) -> np.ndarray:
-        """Preprocess frame to numpy array for ONNX inference"""
-        # Resize to model input size
-        resized = cv2.resize(frame, self._input_size)
-        
-        # Normalize to [0, 1]
-        normalized = resized.astype(np.float32) / 255.0
-        
-        # Convert to NCHW format: (H, W, C) -> (C, H, W) and add batch dimension
-        # Transpose: (H, W, C) -> (C, H, W)
-        transposed = np.transpose(normalized, (2, 0, 1))
-        
-        # Add batch dimension: (C, H, W) -> (1, C, H, W)
-        batched = np.expand_dims(transposed, axis=0)
-        
-        return batched
+    def _run_inference(self, input_data: torch.Tensor | np.ndarray):
+        """Run model inference
+        - ORT_CPU: input_data is already numpy array at float32.
+        - PyTorch: input_data is torch.Tensor at float32."""
+        if self._is_ort():
+            # ONNX Runtime (CPU)
+            input_name = self.model.get_inputs()[0].name
+
+            if self._backend is RuntimeBackend.ORT_CUDA:
+                # TODO: Add support when available
+                # Create io bind and bind inputs without copies
+                pass
+            outputs = self.model.run(None, {input_name: input_data})
+            return outputs[0]
+
+        # PyTorch model
+        return self.model(input_data).detach().cpu().numpy()
+
+    def _preprocess(self, frame: np.ndarray) -> np.ndarray | torch.Tensor:
+        """Preprocess frame.
+        - ORT_CPU: Keep NumPy end-end
+        - ORT_GPU: TODO: Add support when available
+        - PyTorch: Use torchvision transforms
+
+        Args:
+            frame (np.ndarray): RGB image as numpy array (H, W, 3)
+        """
+        if self._is_ort():
+            # Resize order is reversed, needs explicit width and height
+            h, w = self._input_size
+            resized = cv2.resize(frame, (w, h))  
+
+            # Contiguous layout
+            resized = np.ascontiguousarray(resized)
+
+            # Normalize to [0,1]
+            # resized = (resized - resized.min()) / (resized.max() - resized.min() + 1e-6)
+            resized = resized.astype(np.float32)
+            resized /= 255.0
+
+            # HWC (RGB) -> CHW
+            chw = np.transpose(resized, (2, 0, 1))
+            # Add batch dim: (1, 3, H, W)
+            nchw = np.expand_dims(chw, axis=0)
+            return nchw
+
+        # PyTorch preprocessing path (unchanged behavior)
+        return self._transform(frame).unsqueeze(0).to(self.device)
     
     def _parse_annotations(self, outputs: np.ndarray):
         """Parse model outputs into Annotation objects"""
