@@ -45,10 +45,28 @@ variable "ecs_desired_count" {
   default     = 1
 }
 
+variable "ecs_min_capacity" {
+  description = "Minimum number of ECS tasks for auto-scaling"
+  type        = number
+  default     = 1
+}
+
+variable "ecs_max_capacity" {
+  description = "Maximum number of ECS tasks for auto-scaling"
+  type        = number
+  default     = 2
+}
+
 variable "cloudwatch_retention_days" {
   description = "CloudWatch log retention in days"
   type        = number
   default     = 7
+}
+
+variable "redis_node_type" {
+  description = "ElastiCache Redis node type"
+  type        = string
+  default     = "cache.t3.micro"
 }
 
 variable "tags" {

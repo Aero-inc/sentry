@@ -16,6 +16,7 @@ from src.models.cpu_specialist import CPUSpecialist
 from src.models.specialist_interface import SpecialistInterface, DetectionResult
 from src.services.aws_services import S3Service, CloudWatchService
 from src.services.decision_maker import DecisionMaker, SpecialistDecision
+from src.services.redis_service import RedisService
 
 
 class StreamProcessor:
@@ -34,12 +35,17 @@ class StreamProcessor:
         self.s3_service = s3
         self.cloudwatch_service = cloudwatch
         
+        # Initialize Redis for distributed state
+        self.redis = RedisService(cfg.redis_host, cfg.redis_port, cfg.redis_db)
+        
+        # Fallback to in-memory if Redis unavailable
+        self.active_streams: Dict[str, StreamConfig] = {}
+        
         # Pipeline components
         self.annotation_model: Optional[AnnotationModel] = None
         self.decision_maker: Optional[DecisionMaker] = None
         self.specialists: Dict[str, SpecialistInterface] = {}
         
-        self.active_streams: Dict[str, StreamConfig] = {}
         self.stats = {
             'frames_processed': 0,
             'frames_sampled': 0,
@@ -130,7 +136,12 @@ class StreamProcessor:
     def start_stream(self, stream_config: StreamConfig) -> Dict[str, Any]:
         """Start processing a stream"""
         print(f"Starting stream: {stream_config.stream_id}")
-        self.active_streams[stream_config.stream_id] = stream_config
+        
+        # Store in Redis if available, otherwise in-memory
+        if self.redis.enabled:
+            self.redis.set_stream(stream_config.stream_id, asdict(stream_config))
+        else:
+            self.active_streams[stream_config.stream_id] = stream_config
         
         return {
             'stream_id': stream_config.stream_id,
@@ -142,8 +153,12 @@ class StreamProcessor:
         """Stop processing a stream"""
         print(f"Stopping stream: {stream_id}")
         
-        if stream_id in self.active_streams:
-            del self.active_streams[stream_id]
+        # Remove from Redis if available, otherwise from in-memory
+        if self.redis.enabled:
+            self.redis.delete_stream(stream_id)
+        else:
+            if stream_id in self.active_streams:
+                del self.active_streams[stream_id]
         
         return {'stream_id': stream_id, 'status': 'stopped'}
     
@@ -168,9 +183,16 @@ class StreamProcessor:
             StreamNotFoundError: If stream is not active
             InvalidFrameError: If frame validation fails
         """
-        stream_config = self.active_streams.get(stream_id)
-        if not stream_config:
-            raise StreamNotFoundError(f"Stream not active: {stream_id}")
+        # Retrieve stream config from Redis or in-memory
+        if self.redis.enabled:
+            stream_data = self.redis.get_stream(stream_id)
+            if not stream_data:
+                raise StreamNotFoundError(f"Stream not active: {stream_id}")
+            stream_config = StreamConfig(**stream_data)
+        else:
+            stream_config = self.active_streams.get(stream_id)
+            if not stream_config:
+                raise StreamNotFoundError(f"Stream not active: {stream_id}")
         
         self.stats['frames_processed'] += 1
         
@@ -305,8 +327,15 @@ class StreamProcessor:
             if specialist and specialist.is_loaded:
                 specialist_metrics[name] = specialist.get_metrics()
         
+        # Get active streams count from Redis or in-memory
+        if self.redis.enabled:
+            active_stream_count = len(self.redis.get_all_stream_ids())
+        else:
+            active_stream_count = len(self.active_streams)
+        
         return {
-            'active_streams': len(self.active_streams),
+            'active_streams': active_stream_count,
+            'redis_enabled': self.redis.enabled,
             'annotation_model_loaded': self.annotation_model.is_loaded if self.annotation_model else False,
             'specialists_loaded': list(self.specialists.keys()),
             'annotation_metrics': annotation_metrics,

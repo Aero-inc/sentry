@@ -83,7 +83,8 @@ resource "aws_lb_target_group" "backend" {
   )
 }
 
-# HTTP listener (redirect to HTTPS in production, allow in staging)
+# HTTP listener - HTTPS is handled by CloudFront (viewer_protocol_policy: redirect-to-https)
+# Traffic flow: User (HTTPS) → CloudFront (HTTPS) → ALB (HTTP) → ECS
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.backend.arn
   port              = "80"

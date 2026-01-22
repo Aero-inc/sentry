@@ -7,6 +7,22 @@ version: '3.8'
 name: sentry-local
 
 services:
+  redis:
+    container_name: sentry-redis
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - sentry-network
+
   sentry-stream-worker:
     container_name: sentry-stream-worker
     build:
@@ -20,10 +36,16 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=us-east-1
       - S3_ARTIFACTS_BUCKET=aero-sentry-2026-staging-artifacts
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - PORT=8080
       - LOG_LEVEL=DEBUG
       - MODEL_INPUT_SIZE=640,640
       - CONFIDENCE_THRESHOLD=0.5
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -50,3 +72,6 @@ services:
 networks:
   sentry-network:
     driver: bridge
+
+volumes:
+  redis-data:
