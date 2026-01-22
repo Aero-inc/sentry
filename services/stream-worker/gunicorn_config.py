@@ -9,9 +9,9 @@ bind = "0.0.0.0:8080"
 backlog = 2048
 
 # Worker processes
-workers = int(os.getenv("GUNICORN_WORKERS", multiprocessing.cpu_count()))
-if workers > 2:
-    workers = 2  # Limit for memory constraints
+# NOTE: With ML models, each worker loads models separately (~1-2GB per worker)
+# Using 1 worker to avoid OOM issues. Scale horizontally with ECS tasks instead.
+workers = int(os.getenv("GUNICORN_WORKERS", "1"))
 if workers < 1:
     workers = 1
 
@@ -83,12 +83,13 @@ def pre_fork(server, worker):
 
 def post_fork(server, worker):
     """Called just after a worker has been forked."""
-    cpu_count = multiprocessing.cpu_count()
-    # Set PyTorch threading environment variables for each worker
-    os.environ["OMP_NUM_THREADS"] = str(cpu_count)
-    os.environ["MKL_NUM_THREADS"] = str(cpu_count)
-    os.environ["TORCH_NUM_THREADS"] = str(cpu_count)
-    print(f"Worker {worker.pid} spawned (will use {cpu_count} threads for PyTorch)")
+    # Limit threads to reduce memory pressure (PyTorch uses thread pools)
+    # With 1-2 vCPUs, using 2-4 threads is optimal
+    thread_count = min(4, max(2, multiprocessing.cpu_count()))
+    os.environ["OMP_NUM_THREADS"] = str(thread_count)
+    os.environ["MKL_NUM_THREADS"] = str(thread_count)
+    os.environ["TORCH_NUM_THREADS"] = str(thread_count)
+    print(f"Worker {worker.pid} spawned (using {thread_count} threads for PyTorch, {multiprocessing.cpu_count()} CPUs available)")
 
 
 def worker_abort(worker):
