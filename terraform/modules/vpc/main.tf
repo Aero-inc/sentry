@@ -65,11 +65,11 @@ resource "aws_security_group" "ecs_tasks" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "Allow HTTP traffic"
+    description = "Allow HTTP traffic from VPC only"
     protocol    = "tcp"
     from_port   = 8080
     to_port     = 8080
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {

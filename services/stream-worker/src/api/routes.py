@@ -31,15 +31,25 @@ def init_routes(processor: StreamProcessor):
 
 @api_bp.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - lightweight, no model dependency"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'stream-worker'
+    }), 200
+
+
+@api_bp.route('/status', methods=['GET'])
+def status_check():
+    """Detailed status endpoint with model info"""
     stats = stream_processor.get_stats() if stream_processor else {}
     
     return jsonify({
-        'status': 'healthy',
+        'status': 'ok',
         'service': 'stream-worker',
         'annotation_model_loaded': stats.get('annotation_model_loaded', False),
         'specialists_loaded': stats.get('specialists_loaded', []),
-        'active_streams': stats.get('active_streams', 0)
+        'active_streams': stats.get('active_streams', 0),
+        'redis_enabled': stats.get('redis_enabled', False)
     }), 200
 
 
