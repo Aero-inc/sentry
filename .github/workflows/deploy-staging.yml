@@ -95,6 +95,7 @@ jobs:
           aws ecs update-service \
             --cluster ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-cluster \
             --service ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend \
+            --task-definition ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
       
