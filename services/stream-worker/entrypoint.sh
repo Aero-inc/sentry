@@ -4,22 +4,27 @@
 # Get number of CPU cores
 CPU_CORES=$(nproc)
 
-# Calculate workers: (2 * CPU) + 1, capped at 8
-WORKERS=$((2 * CPU_CORES + 1))
-if [ $WORKERS -gt 8 ]; then
-    WORKERS=8
+# Optimized worker config for ML inference:
+# Use 1 worker per CPU core (model loads once per worker, no fork issues)
+# Each worker handles ~100-200 concurrent requests via async
+WORKERS=$CPU_CORES
+if [ $WORKERS -lt 1 ]; then
+    WORKERS=1
+fi
+if [ $WORKERS -gt 4 ]; then
+    WORKERS=4
 fi
 
 echo "Starting with $WORKERS gunicorn workers (CPU cores: $CPU_CORES)"
 
-# Start gunicorn with calculated workers
+# Start gunicorn with optimized settings for ML workloads
 exec gunicorn --bind 0.0.0.0:8080 \
      --workers $WORKERS \
      --worker-class sync \
      --timeout 120 \
      --graceful-timeout 30 \
-     --max-requests 1000 \
-     --max-requests-jitter 100 \
+     --preload-app \
+     --worker-tmp-dir /dev/shm \
      --access-logfile - \
      --error-logfile - \
      --log-level info \
