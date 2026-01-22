@@ -42,6 +42,7 @@ def health_check():
 def status_check():
     """Detailed status endpoint with model info"""
     stats = stream_processor.get_stats() if stream_processor else {}
+    redis_enabled = stats.get('redis_enabled', False)
     
     return jsonify({
         'status': 'ok',
@@ -49,7 +50,9 @@ def status_check():
         'annotation_model_loaded': stats.get('annotation_model_loaded', False),
         'specialists_loaded': stats.get('specialists_loaded', []),
         'active_streams': stats.get('active_streams', 0),
-        'redis_enabled': stats.get('redis_enabled', False)
+        'redis_enabled': redis_enabled,
+        'storage_backend': 'redis' if redis_enabled else 'in-memory-dict',
+        'production_ready': redis_enabled
     }), 200
 
 

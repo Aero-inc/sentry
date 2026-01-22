@@ -5,7 +5,7 @@ project_name = "aero-sentry-2026"
 
 # ECS Configuration
 ecs_task_cpu      = 2048 # 2 vCPU for ML inference
-ecs_task_memory   = 4096 # 4GB for ML models + workers
+ecs_task_memory   = 6144 # 6GB for ML models (using 1 worker, extra headroom for safety)
 ecs_desired_count = 2
 ecs_min_capacity  = 2
 ecs_max_capacity  = 6

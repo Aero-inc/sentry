@@ -1,8 +1,8 @@
 """
 Annotation Model
 Performs initial object detection to identify regions of interest
+Uses ONNX Runtime for efficient CPU inference without PyTorch overhead
 """
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -10,7 +10,6 @@ import time
 
 import cv2
 import numpy as np
-import torch
 
 try:
     import onnxruntime as ort
@@ -40,32 +39,26 @@ class AnnotationModel:
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.model: Optional[torch.nn.Module] = None
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model: Optional[Any] = None  # ONNX InferenceSession
         self.is_loaded = False
         self.annotation_times: List[float] = []
         self._input_size = config.get('annotation_input_size', self.DEFAULT_INPUT_SIZE)
         self._confidence_threshold = config.get('annotation_confidence_threshold', self.DEFAULT_CONFIDENCE_THRESHOLD)
         
     def load_model(self):
-        """Load annotation model using PyTorch or ONNX Runtime"""
+        """Load annotation model using ONNX Runtime"""
         model_path = Path(self.config.get('annotation_model_path', ''))
         if not model_path or not model_path.exists():
             raise ValueError(f"Invalid model path: {model_path}")
         
+        if model_path.suffix != '.onnx':
+            raise ValueError(f"Only ONNX models supported for annotation. Got: {model_path.suffix}")
+        
         try:
-            print(f"Loading annotation model from {model_path} on {self.device}")
-            
-            # Load based on file extension
-            if model_path.suffix == '.onnx':
-                self._load_onnx_model(model_path)
-            else:
-                # PyTorch format (.pt, .pth)
-                self.model = torch.load(str(model_path), map_location=self.device)
-                self.model.eval()
-            
+            print(f"Loading ONNX annotation model from {model_path}")
+            self._load_onnx_model(model_path)
             self.is_loaded = True
-            print(f"Annotation model loaded successfully on {self.device}")
+            print(f"ONNX annotation model loaded successfully")
         except Exception as e:
             raise RuntimeError(f"Failed to load annotation model: {e}") from e
     
@@ -76,15 +69,20 @@ class AnnotationModel:
         
         session_options = ort.SessionOptions()
         session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        # Enable parallel execution for faster inference
+        session_options.intra_op_num_threads = 2
+        session_options.inter_op_num_threads = 2
         
-        # Choose provider based on device
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.device.type == 'cuda' else ['CPUExecutionProvider']
-        
+        # Use CPU execution provider for memory efficiency
         self.model = ort.InferenceSession(
             str(model_path),
             sess_options=session_options,
-            providers=providers
+            providers=['CPUExecutionProvider']
         )
+        print("ONNX model loaded with CPUExecutionProvider")
+        
+        # Warm up the model with a dummy inference to avoid first-request latency
+        self._warmup_model()
     
     def unload_model(self):
         """Unload annotation model from memory"""
@@ -92,14 +90,10 @@ class AnnotationModel:
             del self.model
             self.model = None
         
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
         self.is_loaded = False
         self.annotation_times.clear()
         print("Annotation model unloaded")
     
-    @torch.no_grad()
     def annotate(self, frame: np.ndarray) -> List[Annotation]:
         """
         Annotate frame to identify regions and objects
@@ -116,12 +110,11 @@ class AnnotationModel:
         start_time = time.perf_counter()
         
         try:
-            # Preprocess frame to tensor
-            input_tensor = self._preprocess(frame)
+            # Preprocess frame to numpy array (ONNX input)
+            input_array = self._preprocess(frame)
             
-            # Run inference with automatic mixed precision if on GPU
-            with self._inference_context():
-                outputs = self._run_inference(input_tensor)
+            # Run ONNX inference
+            outputs = self._run_inference(input_array)
             
             # Parse annotations
             annotations = self._parse_annotations(outputs)
@@ -134,41 +127,42 @@ class AnnotationModel:
             
         except Exception as e:
             raise RuntimeError(f"Annotation failed: {e}") from e
+        finally:
+            # Explicit cleanup (input_array is numpy, will be GC'd)
+            pass
     
-    @contextmanager
-    def _inference_context(self):
-        """Context manager for inference with device-specific optimizations"""
-        if self.device.type == 'cuda':
-            with torch.cuda.amp.autocast():
-                yield
-        else:
-            yield
+    def _warmup_model(self) -> None:
+        """Warm up model with dummy inference to avoid first-request latency"""
+        try:
+            dummy_frame = np.zeros((*self._input_size, 3), dtype=np.uint8)
+            dummy_input = self._preprocess(dummy_frame)
+            self.model.run(None, {self.model.get_inputs()[0].name: dummy_input})
+            print("Model warmed up successfully")
+        except Exception as e:
+            print(f"WARNING: Model warmup failed: {e}")
     
-    def _run_inference(self, input_tensor: torch.Tensor):
-        """Run model inference"""
-        if hasattr(self.model, 'run'):
-            # ONNX Runtime
-            input_name = self.model.get_inputs()[0].name
-            outputs = self.model.run(None, {input_name: input_tensor.cpu().numpy()})
-            return outputs[0]
-        
-        # PyTorch model
-        return self.model(input_tensor).cpu().numpy()
+    def _run_inference(self, input_array: np.ndarray):
+        """Run ONNX model inference"""
+        input_name = self.model.get_inputs()[0].name
+        outputs = self.model.run(None, {input_name: input_array})
+        return outputs[0]
     
-    def _preprocess(self, frame: np.ndarray):
-        """Preprocess frame to tensor for annotation model"""
+    def _preprocess(self, frame: np.ndarray) -> np.ndarray:
+        """Preprocess frame to numpy array for ONNX inference"""
+        # Resize to model input size
         resized = cv2.resize(frame, self._input_size)
         
-        # Ensure array is writable and contiguous for torch.from_numpy
-        resized = np.ascontiguousarray(resized)
+        # Normalize to [0, 1]
+        normalized = resized.astype(np.float32) / 255.0
         
-        # Normalize to [0, 1] and convert to tensor
-        tensor = torch.from_numpy(resized).float() / 255.0
+        # Convert to NCHW format: (H, W, C) -> (C, H, W) and add batch dimension
+        # Transpose: (H, W, C) -> (C, H, W)
+        transposed = np.transpose(normalized, (2, 0, 1))
         
-        # NCHW format: (H, W, C) -> (C, H, W) and add batch dimension
-        tensor = tensor.permute(2, 0, 1).unsqueeze(0)
+        # Add batch dimension: (C, H, W) -> (1, C, H, W)
+        batched = np.expand_dims(transposed, axis=0)
         
-        return tensor.to(self.device)
+        return batched
     
     def _parse_annotations(self, outputs: np.ndarray):
         """Parse model outputs into Annotation objects"""

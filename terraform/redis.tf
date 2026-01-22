@@ -2,6 +2,7 @@
 resource "aws_elasticache_subnet_group" "redis" {
   name       = "${var.project_name}-${var.environment}-redis-subnet"
   subnet_ids = module.vpc.public_subnet_ids
+  description = "Subnet group for Redis cluster"
 
   tags = merge(
     var.tags,
@@ -50,6 +51,9 @@ resource "aws_elasticache_cluster" "redis" {
   port                 = 6379
   subnet_group_name    = aws_elasticache_subnet_group.redis.name
   security_group_ids   = [aws_security_group.redis.id]
+  
+  # Apply changes immediately for staging, during maintenance window for production
+  apply_immediately = var.environment == "staging" ? true : false
 
   # Enable encryption for data in transit (production best practice)
   transit_encryption_enabled = var.environment == "production" ? true : false

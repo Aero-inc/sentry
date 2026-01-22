@@ -41,6 +41,12 @@ class StreamProcessor:
         # Fallback to in-memory if Redis unavailable
         self.active_streams: Dict[str, StreamConfig] = {}
         
+        if self.redis.enabled:
+            print("✓ Stream processor using Redis for distributed state")
+        else:
+            print("⚠ WARNING: Stream processor using in-memory dict (not production-ready)")
+            print("⚠ WARNING: Multiple workers will not share state!")
+        
         # Pipeline components
         self.annotation_model: Optional[AnnotationModel] = None
         self.decision_maker: Optional[DecisionMaker] = None
@@ -139,7 +145,10 @@ class StreamProcessor:
         
         # Store in Redis if available, otherwise in-memory
         if self.redis.enabled:
-            self.redis.set_stream(stream_config.stream_id, asdict(stream_config))
+            success = self.redis.set_stream(stream_config.stream_id, asdict(stream_config))
+            if not success:
+                print(f"WARNING: Failed to store stream {stream_config.stream_id} in Redis, using in-memory fallback")
+                self.active_streams[stream_config.stream_id] = stream_config
         else:
             self.active_streams[stream_config.stream_id] = stream_config
         
@@ -270,7 +279,7 @@ class StreamProcessor:
         # Log detections
         print(f"FINAL: stream={stream_id} frame={frame_index} annotations={len(annotations)} detections={len(detections)}")
         
-        return {
+        result = {
             'stream_id': stream_id,
             'frame_index': frame_index,
             'sampled': True,
@@ -279,6 +288,11 @@ class StreamProcessor:
             'detections': [asdict(d) for d in detections],
             'metrics': combined_metrics
         }
+        
+        # Cleanup frame data to prevent memory accumulation
+        del frame
+        
+        return result
     
     @classmethod
     def _validate_frame(cls, frame: np.ndarray):

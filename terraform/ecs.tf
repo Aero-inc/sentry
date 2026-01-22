@@ -63,15 +63,19 @@ resource "aws_ecs_task_definition" "backend" {
         },
         {
           name  = "OMP_NUM_THREADS"
-          value = "0"
+          value = "2"
         },
         {
           name  = "MKL_NUM_THREADS"
-          value = "0"
+          value = "2"
         },
         {
           name  = "TORCH_NUM_THREADS"
-          value = "0"
+          value = "2"
+        },
+        {
+          name  = "GUNICORN_WORKERS"
+          value = "1"
         }
       ]
       logConfiguration = {
