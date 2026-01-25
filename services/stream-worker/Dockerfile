@@ -61,5 +61,10 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Start via entrypoint script
-CMD ["./entrypoint.sh"]
+# Start via entrypoint script=
+# CMD ["./entrypoint.sh"]
+
+# Recommended way
+COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+CMD ["sh", "/app/entrypoint.sh"]
