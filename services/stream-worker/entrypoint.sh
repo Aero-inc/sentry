@@ -20,10 +20,16 @@ echo "Configuring $WORKERS gunicorn workers"
 # Export worker count for gunicorn config
 export GUNICORN_WORKERS=$WORKERS
 
-# Configure PyTorch to use all available cores per inference
-export OMP_NUM_THREADS=$CPU_CORES
-export MKL_NUM_THREADS=$CPU_CORES
-export TORCH_NUM_THREADS=$CPU_CORES
+# Fix permissions for model weights directory (important for Docker volumes)
+# This requires root privileges, which we have at the start of this script.
+echo "Ensuring /app/src/models/weights is owned by appuser..."
+mkdir -p /app/src/models/weights
+chown -R appuser:appuser /app/src/models/weights
 
-# Start gunicorn with config file
-exec gunicorn -c gunicorn_config.py app:app
+# Note: Thread configuration (OMP_NUM_THREADS, etc.) is handled 
+# dynamically in gunicorn_config.py's post_fork hook for optimal 
+# performance per worker.
+
+# Start gunicorn via gosu to drop privileges to appuser
+echo "Starting application as appuser..."
+exec gosu appuser gunicorn -c gunicorn_config.py app:app
