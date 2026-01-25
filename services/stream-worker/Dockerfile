@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder
@@ -35,36 +36,27 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+###############################################################
 # Create app directory and non-root user
+# Permissions set here only affect files/directories in the image.
+# For directories mounted as Docker volumes, set permissions in entrypoint.sh.
+###############################################################
 WORKDIR /app
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 
-# Copy application code
-COPY --chown=appuser:appuser *.py ./
-COPY --chown=appuser:appuser src/ ./src/
-COPY --chown=appuser:appuser entrypoint.sh ./
-COPY --chown=appuser:appuser gunicorn_config.py ./
+# Copy application code (cleaner glob handling)
+COPY --chown=appuser:appuser . .
 
-# Make entrypoint executable
-RUN chmod +x entrypoint.sh
-
-# Create models directory
-RUN mkdir -p /models && chown appuser:appuser /models
-
-# Switch to non-root user
-USER appuser
+# Setup entrypoint with cross-platform compatibility
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Expose port
 EXPOSE 8080
 
-# Health check
+# Health check (uses curl from runtime deps)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Start via entrypoint script=
-# CMD ["./entrypoint.sh"]
-
-# Recommended way
-COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
-RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
-CMD ["sh", "/app/entrypoint.sh"]
+# Start as root to allow entrypoint to fix volume permissions.
+# The entrypoint script will drop privileges to appuser using gosu.
+ENTRYPOINT ["/app/entrypoint.sh"]
