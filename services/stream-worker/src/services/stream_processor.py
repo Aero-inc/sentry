@@ -5,7 +5,7 @@ Handles frame processing pipeline
 import os
 import time
 from dataclasses import asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Callable, Optional
 
 import numpy as np
 
@@ -77,7 +77,7 @@ class StreamProcessor:
             self.annotation_model = AnnotationModel(annotation_config)
             
             # Download models from S3 on startup
-            if self.config.s3_artifacts_bucket:
+            if not self.config.local_only and self.config.s3_artifacts_bucket:
                 print(f"Downloading models from S3: {self.config.s3_artifacts_bucket}")
                 os.makedirs(MODEL_WEIGHTS_DIR, exist_ok=True)
                 
@@ -125,7 +125,8 @@ class StreamProcessor:
             model_config = {
                 'model_path': cpu_specialist_path,
                 'confidence_threshold': self.config.confidence_threshold,
-                'input_size': self.config.model_input_size
+                'input_size': self.config.model_input_size,
+                'specialists': self.config.specialists
             }
             cpu_specialist = CPUSpecialist('cpu_detector', model_config)
             
@@ -251,7 +252,10 @@ class StreamProcessor:
             if specialist and specialist.is_loaded:
                 try:
                     # Pass both frame and annotations to specialist
-                    specialist_detections = specialist.infer(frame, decision.annotations)
+                    if isinstance(specialist, Callable):
+                        specialist_detections = specialist(frame, decision.annotations)
+                    else:
+                        specialist_detections = specialist.infer(frame, decision.annotations)
                     detections.extend(specialist_detections)
                     specialist_metrics[decision.specialist_name] = specialist.get_metrics()
                     self.stats['specialist_invocations'] += 1

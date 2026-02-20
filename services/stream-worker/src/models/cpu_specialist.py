@@ -3,8 +3,9 @@ CPU Specialist Implementation
 Uses CPU-based inference for object detection with PyTorch
 """
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Callable, Optional
 import time
+import math
 
 import cv2
 import numpy as np
@@ -13,8 +14,41 @@ import torch
 from src.core.errors import ModelNotLoadedError, InferenceError
 from src.models.specialist_interface import SpecialistInterface, DetectionResult
 
+TYPE_CHECKING = True
 if TYPE_CHECKING:
     from src.models.annotation_model import Annotation
+
+
+def specialist_substitute(frame: np.ndarray, annotations: List[Annotation], threshold: float = 0.05) -> bool:
+    """A substitute function for the specialist models.
+
+    Args:
+        frame (np.ndarray): ndarray of the frame being processed.
+        annotations (List[Annotation]): List of annotations from annotation model.
+        threshold (float, optional): Threshold for distance between human and gun. Defaults to 0.05.
+
+    Returns:
+        bool: True if a dangerous pair is found, False otherwise.
+    """
+    humans = []
+    guns = []
+
+    for annotation in annotations:
+        if annotation.object_type == 'person':
+            humans.append((annotation.bounding_box[0], annotation.bounding_box[1]))
+        elif annotation.object_type == 'gun':
+            guns.append((annotation.bounding_box[0], annotation.bounding_box[1]))
+
+    if not humans or not guns:
+        return False
+
+    # Early exit: the moment we find a dangerous pair
+    for hx, hy in humans:
+        for gx, gy in guns:
+            if math.hypot(hx - gx, hy - gy) < threshold:
+                return True
+
+    return False
 
 
 class CPUSpecialist(SpecialistInterface):
@@ -30,7 +64,7 @@ class CPUSpecialist(SpecialistInterface):
     
     def __init__(self, model_name: str, config: Dict[str, Any]) -> None:
         super().__init__(model_name, config)
-        self.model: Optional[torch.nn.Module] = None
+        self.model: Optional[torch.nn.Module, Callable] = None
         self.inference_times: List[float] = []
         self._max_metrics_history = self.MAX_METRICS_HISTORY
         self._input_size = config.get('input_size', self.DEFAULT_INPUT_SIZE)
@@ -39,6 +73,14 @@ class CPUSpecialist(SpecialistInterface):
         
     def load_model(self) -> None:
         """Load model for CPU inference using PyTorch or ONNX Runtime"""
+        
+        # TODO: Remove this when CPU specialist is implemented
+        if not self.config.specialists:
+            self.is_loaded = True
+            print("CPU Specialist: Using specialist substitute")
+            self.model = specialist_substitute
+            return
+
         model_path = Path(self.config.get('model_path', ''))
         if not model_path or not model_path.exists():
             raise ValueError(f"Invalid model path: {model_path}")

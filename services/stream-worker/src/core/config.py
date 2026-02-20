@@ -42,6 +42,8 @@ class Config:
     # Model Configuration
     model_input_size: tuple
     confidence_threshold: float
+    local_only: bool
+    specialists: bool
     
     @classmethod
     def from_env(cls) -> 'Config':
@@ -56,9 +58,11 @@ class Config:
             port=int(os.getenv('PORT', '8080')),
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
             model_input_size=tuple(map(int, os.getenv('MODEL_INPUT_SIZE', '640,640').split(','))),
-            confidence_threshold=float(os.getenv('CONFIDENCE_THRESHOLD', '0.5'))
+            confidence_threshold=float(os.getenv('CONFIDENCE_THRESHOLD', '0.5')),
+            local_only=bool(os.getenv('LOCAL_ONLY', False)),
+            specialists=bool(os.getenv('SPECIALISTS', True))
         )
-    
+
     @staticmethod
     def get_s3_model_key(model_type: str) -> str:
         """Get S3 key for a model type"""

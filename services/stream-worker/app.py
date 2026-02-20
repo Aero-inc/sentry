@@ -56,4 +56,6 @@ app = create_app()
 
 if __name__ == '__main__':
     config = Config.from_env()
+    config.local_only = True  # For local testing
+    config.specialists = False  # Until CPU specialist is implemented
     app.run(host='0.0.0.0', port=config.port, debug=False)
